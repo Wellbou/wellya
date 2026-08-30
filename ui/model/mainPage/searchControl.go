@@ -93,7 +93,7 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 					continue
 				}
 
-				artistTracks, err := m.client.ArtistPopularTracks(artist.Id)
+				artistTracks, err := m.client.ArtistPopularTracks(uint64(artist.Id))
 				if err != nil {
 					sval, _ := m.searchDialog.SuggestionValue()
 					log.Print(log.LVL_ERROR, "failed to obtain search [%s] artist [%s] tracks: %s", sval, artist.Name, err)
@@ -126,7 +126,7 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 					continue
 				}
 
-				albumWithTracks, err := m.client.Album(album.Id, true)
+				albumWithTracks, err := m.client.Album(uint64(album.Id), true)
 				if err != nil {
 					sval, _ := m.searchDialog.SuggestionValue()
 					log.Print(log.LVL_ERROR, "failed to obtain search [%s] album [%s] tracks: %s", sval, album.Title, err)
@@ -163,7 +163,7 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 					continue
 				}
 
-				playlistTracks, err := m.client.PlaylistTracks(pl.Kind, pl.Owner.Uid, false)
+				playlistTracks, err := m.client.PlaylistTracks(uint64(pl.Kind), uint64(pl.Owner.Uid), false)
 				if err != nil {
 					sval, _ := m.searchDialog.SuggestionValue()
 					log.Print(log.LVL_ERROR, "failed to obtain search [%s] playlist [%s] tracks: %s", sval, pl.Title, err)

@@ -304,7 +304,7 @@ func NewClient(name, token string) (*YaMusicClient, error) {
 		return nil, err
 	}
 
-	client.userid = clientStatus.Account.Uid
+	client.userid = uint64(clientStatus.Account.Uid)
 	client.sessionid = nowTimestamp()
 
 	return client, nil

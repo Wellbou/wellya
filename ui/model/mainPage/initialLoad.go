@@ -233,7 +233,7 @@ func (m *Model) loadLikedAlbums(wg *sync.WaitGroup, block *menuBlock) {
 
 	albums := make([]api.Album, 0, len(likedAlbums))
 	for _, albumInfo := range likedAlbums {
-		album, err := m.client.Album(albumInfo.Id, true)
+		album, err := m.client.Album(uint64(albumInfo.Id), true)
 		if err != nil {
 			log.Print(log.LVL_ERROR, "failed to obtain album [%d] info: %s", albumInfo.Id, err)
 			continue
@@ -260,7 +260,7 @@ func (m *Model) loadPinnedAlbums(wg *sync.WaitGroup, block *menuBlock) {
 
 	albums := make([]api.Album, 0, len(pinnedAlbums))
 	for _, albumInfo := range pinnedAlbums {
-		album, err := m.client.Album(albumInfo.Data.Id, true)
+		album, err := m.client.Album(uint64(albumInfo.Data.Id), true)
 		if err != nil {
 			log.Print(log.LVL_ERROR, "failed to obtain pinned album [%d] info: %s", albumInfo.Data.Id, err)
 			continue
@@ -310,7 +310,7 @@ func (m *Model) loadUserPlaylists(wg *sync.WaitGroup, block *menuBlock) {
 		innerWg.Add(1)
 		go func(i int, pl api.Playlist) {
 			defer innerWg.Done()
-			tracks, terr := m.client.PlaylistTracks(pl.Kind, pl.Owner.Uid, false)
+			tracks, terr := m.client.PlaylistTracks(uint64(pl.Kind), uint64(pl.Owner.Uid), false)
 			if terr != nil {
 				log.Print(log.LVL_ERROR, "failed to obtain user playlist [%s] tracks: %s", pl.Title, terr)
 				return
@@ -332,7 +332,7 @@ func (m *Model) loadUserPlaylists(wg *sync.WaitGroup, block *menuBlock) {
 			}
 			block.items = append(block.items, &playlist.Item{
 				Name:     pl.Title,
-				Kind:     pl.Kind,
+				Kind: uint64(pl.Kind),
 				Revision: pl.Revision,
 				Active:   true,
 				Subitem:  true,

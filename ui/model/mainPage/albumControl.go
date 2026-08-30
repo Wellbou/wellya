@@ -22,7 +22,7 @@ func (m *Model) goToAlbum() tea.Cmd {
 		return nil
 	}
 
-	albumId := selectedTrack.Albums[0].Id
+	albumId := uint64(selectedTrack.Albums[0].Id)
 	album, err := m.client.Album(albumId, true)
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to obtain album [%d] tracks: %s", albumId, err)

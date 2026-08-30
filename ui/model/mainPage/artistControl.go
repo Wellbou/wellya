@@ -24,7 +24,7 @@ func (m *Model) browseSelectedTrackArtist() tea.Cmd {
 	}
 
 	artist := selectedTrack.Artists[0]
-	artistTracks, err := m.client.ArtistPopularTracks(artist.Id)
+	artistTracks, err := m.client.ArtistPopularTracks(uint64(artist.Id))
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to obtain artist [%s] tracks: %s", artist.Name, err)
 		m.tracker.ShowError("artist tracks")

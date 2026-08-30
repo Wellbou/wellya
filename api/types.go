@@ -1,8 +1,117 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"strconv"
+	"strings"
 	"time"
 )
+
+type FlexString string
+
+func (fs *FlexString) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		*fs = ""
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err == nil {
+			*fs = FlexString(s)
+			return nil
+		}
+	}
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err == nil {
+		*fs = FlexString(n.String())
+		return nil
+	}
+	*fs = FlexString(strings.Trim(string(data), "\""))
+	return nil
+}
+
+func (fs FlexString) String() string { return string(fs) }
+
+type FlexInt int
+
+func (fi *FlexInt) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		*fi = 0
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err == nil {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				*fi = 0
+				return nil
+			}
+			if v, err := strconv.Atoi(s); err == nil {
+				*fi = FlexInt(v)
+				return nil
+			}
+			if f, err := strconv.ParseFloat(s, 64); err == nil {
+				*fi = FlexInt(int(f))
+				return nil
+			}
+		}
+	}
+	var i int
+	if err := json.Unmarshal(data, &i); err == nil {
+		*fi = FlexInt(i)
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(data, &f); err == nil {
+		*fi = FlexInt(int(f))
+		return nil
+	}
+	return nil
+}
+
+type FlexUint64 uint64
+
+func (fu *FlexUint64) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		*fu = 0
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err == nil {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				*fu = 0
+				return nil
+			}
+			if v, err := strconv.ParseUint(s, 10, 64); err == nil {
+				*fu = FlexUint64(v)
+				return nil
+			}
+		}
+	}
+	var u uint64
+	if err := json.Unmarshal(data, &u); err == nil {
+		*fu = FlexUint64(u)
+		return nil
+	}
+	var i int64
+	if err := json.Unmarshal(data, &i); err == nil {
+		*fu = FlexUint64(uint64(i))
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(data, &f); err == nil {
+		*fu = FlexUint64(uint64(f))
+		return nil
+	}
+	return nil
+}
 
 type fullDownloadInfo struct {
 	Host string `json:"host"`
@@ -41,20 +150,20 @@ func (e UnauthorizedError) Error() string {
 }
 
 type InvocInfo struct {
-	ExecDurationMillis int    `json:"exec-duration-millis"`
-	Hostname           string `json:"hostname"`
-	ReqId              string `json:"req-id"`
+	ExecDurationMillis FlexInt `json:"exec-duration-millis"`
+	Hostname           string  `json:"hostname"`
+	ReqId              string  `json:"req-id"`
 }
 
 type UserStatus struct {
 	Account struct {
-		Uid              uint64 `json:"uid"`
-		DisplayName      string `json:"displayName"`
-		FirstName        string `json:"firstName"`
-		SecondName       string `json:"secondName"`
-		FullName         string `json:"fullName"`
-		Login            string `json:"login"`
-		ServiceAvailable bool   `json:"serviceAvailable"`
+		Uid              FlexUint64 `json:"uid"`
+		DisplayName      string     `json:"displayName"`
+		FirstName        string     `json:"firstName"`
+		SecondName       string     `json:"secondName"`
+		FullName         string     `json:"fullName"`
+		Login            string     `json:"login"`
+		ServiceAvailable bool       `json:"serviceAvailable"`
 	} `json:"account"`
 
 	Permissions struct {
@@ -76,11 +185,11 @@ type Cover struct {
 }
 
 type Owner struct {
-	Login    string `json:"login"`
-	Name     string `json:"name"`
-	Sex      string `json:"sex"`
-	Uid      uint64 `json:"uid"`
-	Verified bool   `json:"verified"`
+	Login    string     `json:"login"`
+	Name     string     `json:"name"`
+	Sex      string     `json:"sex"`
+	Uid      FlexUint64 `json:"uid"`
+	Verified bool       `json:"verified"`
 }
 
 type Tag struct {
@@ -89,17 +198,17 @@ type Tag struct {
 }
 
 type Label struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
+	Id   FlexString `json:"id"`
+	Name string     `json:"name"`
 }
 
 type Artist struct {
-	Id       uint64   `json:"id"`
-	Name     string   `json:"name"`
-	Various  bool     `json:"various"`
-	Composer bool     `json:"composer"`
-	Cover    Cover    `json:"cover"`
-	Genres   []string `json:"genres"`
+	Id       FlexUint64 `json:"id"`
+	Name     string     `json:"name"`
+	Various  bool       `json:"various"`
+	Composer bool       `json:"composer"`
+	Cover    Cover      `json:"cover"`
+	Genres   []string   `json:"genres"`
 }
 
 type ArtistTracks struct {
@@ -108,21 +217,21 @@ type ArtistTracks struct {
 }
 
 type Album struct {
-	Id          uint64    `json:"id"`
-	Title       string    `json:"title"`
-	Available   bool      `json:"available"`
-	Type        string    `json:"type"`
-	MetaType    string    `json:"metaType"`
-	Year        int       `json:"year"`
-	ReleaseDate string    `json:"releaseDate"`
-	CoverUri    string    `json:"coverUri"`
-	OgImage     string    `json:"ogImage"`
-	Genre       string    `json:"genre"`
-	Recent      bool      `json:"recent"`
-	TrackCount  int       `json:"trackCount"`
-	Volumes     [][]Track `json:"volumes"`
-	Artists     []Artist  `json:"artists"`
-	Labels      []Label   `json:"labels"`
+	Id          FlexUint64 `json:"id"`
+	Title       string     `json:"title"`
+	Available   bool       `json:"available"`
+	Type        string     `json:"type"`
+	MetaType    string     `json:"metaType"`
+	Year        int        `json:"year"`
+	ReleaseDate string     `json:"releaseDate"`
+	CoverUri    string     `json:"coverUri"`
+	OgImage     string     `json:"ogImage"`
+	Genre       string     `json:"genre"`
+	Recent      bool       `json:"recent"`
+	TrackCount  int        `json:"trackCount"`
+	Volumes     [][]Track  `json:"volumes"`
+	Artists     []Artist   `json:"artists"`
+	Labels      []Label    `json:"labels"`
 }
 
 type Track struct {
@@ -168,8 +277,8 @@ type Track struct {
 }
 
 type Playlist struct {
-	Uid  uint64 `json:"uid"`
-	Kind uint64 `json:"kind"`
+	Uid  FlexUint64 `json:"uid"`
+	Kind FlexUint64 `json:"kind"`
 
 	Title                string `json:"title"`
 	Description          string `json:"description"`
@@ -192,11 +301,11 @@ type Playlist struct {
 
 	TrackCount int `json:"trackCount"`
 	Tracks     []struct {
-		Id        uint64 `json:"id"`
-		PlayCount int    `json:"playCount"`
-		Recent    bool   `json:"recent"`
-		Timestamp string `json:"timestamp"`
-		Track     Track  `json:"track"`
+		Id        FlexString `json:"id"`
+		PlayCount int       `json:"playCount"`
+		Recent    bool      `json:"recent"`
+		Timestamp string    `json:"timestamp"`
+		Track     Track     `json:"track"`
 	} `json:"tracks"`
 }
 
@@ -207,6 +316,36 @@ type StationId struct {
 
 func (s *StationId) String() string {
 	return s.Type + ":" + s.Tag
+}
+
+type PossibleValue struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type PossibleValues []PossibleValue
+
+func (p *PossibleValues) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		*p = nil
+		return nil
+	}
+	if data[0] == '[' {
+		var arr []PossibleValue
+		if err := json.Unmarshal(data, &arr); err == nil {
+			*p = arr
+			return nil
+		}
+	}
+	if data[0] == '{' {
+		var single PossibleValue
+		if err := json.Unmarshal(data, &single); err == nil {
+			*p = []PossibleValue{single}
+			return nil
+		}
+	}
+	return nil
 }
 
 type Station struct {
@@ -221,12 +360,9 @@ type Station struct {
 
 	Restrictions struct {
 		Language struct {
-			Type           string `json:"type"`
-			Name           string `json:"name"`
-			PossibleValues struct {
-				Name  string `json:"name"`
-				Value string `json:"value"`
-			} `json:"possibleValues"`
+			Type           string         `json:"type"`
+			Name           string         `json:"name"`
+			PossibleValues PossibleValues `json:"possibleValues"`
 		} `json:"language"`
 
 		Mood struct {
@@ -256,12 +392,9 @@ type Station struct {
 		} `json:"energy"`
 
 		Diversity struct {
-			Type           string `json:"type"`
-			Name           string `json:"name"`
-			PossibleValues struct {
-				Name  string `json:"name"`
-				Value string `json:"value"`
-			} `json:"possibleValues"`
+			Type           string         `json:"type"`
+			Name           string         `json:"name"`
+			PossibleValues PossibleValues `json:"possibleValues"`
 		} `json:"diversity"`
 	} `json:"restrictions"`
 }
@@ -306,13 +439,13 @@ type LikesDesc struct {
 }
 
 type LikeAlbumInfo struct {
-	Id        uint64 `json:"id"`
-	Timestamp string `json:"timestamp"`
+	Id        FlexUint64 `json:"id"`
+	Timestamp string     `json:"timestamp"`
 }
 
 type PinData struct {
-	Id    uint64 `json:"id"`
-	Title string `json:"title"`
+	Id    FlexUint64 `json:"id"`
+	Title string     `json:"title"`
 }
 
 type PinInfo struct {

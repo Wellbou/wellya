@@ -62,7 +62,7 @@ func (m *Model) addPlaylistControl(msg search.Control) tea.Cmd {
 
 			foundPlaylist = &playlist.Item{
 				Name:     pl.Title,
-				Kind:     pl.Kind,
+				Kind: uint64(pl.Kind),
 				Revision: pl.Revision,
 				Active:   true,
 				Subitem:  true,
