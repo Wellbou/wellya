@@ -21,6 +21,7 @@ const (
 	EV_TRACK_SKIPED   = TrackEventType(ROTOR_SKIP)
 	EV_TRACK_LIKED    = TrackEventType(ROTOR_LIKE)
 	EV_TRACK_UNLIKED  = TrackEventType(ROTOR_UNLIKE)
+	EV_TRACK_DISLIKED = TrackEventType(ROTOR_DISLIKE)
 )
 
 type RotorFeedbackEvent struct {
@@ -47,10 +48,13 @@ func NewRadioFeedbackEvent(evType RadioEventType) *RotorFeedbackEvent {
 }
 
 func NewTrackFeedbackEvent(evType TrackEventType, track *Track, playedSeconds float64) *RotorFeedbackEvent {
+	if len(track.Albums) == 0 {
+		return nil
+	}
 	return &RotorFeedbackEvent{
 		Timestamp:          nowTimestamp(),
 		TotalPlayedSeconds: playedSeconds,
-		TrackLengthSeconds: float64(track.DurationMs) * 1000.0,
+		TrackLengthSeconds: float64(track.DurationMs) / 1000.0,
 		TrackId:            fmt.Sprintf("%s:%d", track.Id, track.Albums[0].Id),
 		Type:               string(evType),
 	}

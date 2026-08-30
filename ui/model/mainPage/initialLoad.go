@@ -5,11 +5,11 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/cache"
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/log"
-	"github.com/dece2183/yamusic-tui/ui/components/playlist"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/cache"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/log"
+	"github.com/wellbou/wellya/ui/components/playlist"
 )
 
 type LoadingMsg uint
@@ -48,6 +48,7 @@ func (m *Model) initialLoad() {
 	var (
 		wg                     sync.WaitGroup
 		myWaveMenuBlock        menuBlock
+		stationsMenuBlock      menuBlock
 		localTracksMenuBlock   menuBlock
 		likedTracksMenuBlock   menuBlock
 		likedAlbumsMenuBlock   menuBlock
@@ -55,8 +56,9 @@ func (m *Model) initialLoad() {
 		userPlaylistsMenuBlock menuBlock
 	)
 
-	wg.Add(6)
+	wg.Add(7)
 	go m.loadMyWave(&wg, &myWaveMenuBlock)
+	go m.loadStations(&wg, &stationsMenuBlock)
 	go m.loadLocalTracks(&wg, &localTracksMenuBlock)
 	go m.loadLikedTracks(&wg, &likedTracksMenuBlock)
 	go m.loadLikedAlbums(&wg, &likedAlbumsMenuBlock)
@@ -73,6 +75,17 @@ func (m *Model) initialLoad() {
 		m.tracker.ShowError("unable to init rotor session")
 	}
 
+	if stationsMenuBlock.err == nil {
+		m.playlists.InsertItem(-1, playlist.ItemEmpty())
+		m.playlists.InsertItem(-1, playlist.ItemCategory("stations:"))
+		for _, item := range stationsMenuBlock.items {
+			m.playlists.InsertItem(-1, item)
+		}
+	} else {
+		log.Print(log.LVL_ERROR, "failed to list stations: %s", stationsMenuBlock.err)
+		m.tracker.ShowError("stations list")
+	}
+
 	if localTracksMenuBlock.err == nil {
 		for _, item := range localTracksMenuBlock.items {
 			m.playlists.InsertItem(-1, item)
@@ -84,6 +97,8 @@ func (m *Model) initialLoad() {
 		log.Print(log.LVL_ERROR, "failed to list cached tracks: %s", localTracksMenuBlock.err)
 		m.tracker.ShowError("cache list")
 	}
+
+	m.playlists.InsertItem(-1, &playlist.Item{Name: "history", Kind: playlist.HISTORY, Active: true, Subitem: false})
 
 	m.playlists.InsertItem(-1, playlist.ItemEmpty())
 	m.playlists.InsertItem(-1, playlist.ItemCategory("likes:"))
@@ -257,8 +272,8 @@ func (m *Model) loadPinnedAlbums(wg *sync.WaitGroup, block *menuBlock) {
 		block.items = append(block.items, playlist.ItemEmpty())
 		block.items = append(block.items, playlist.ItemCategory("pins:"))
 
-		var albumTracks []api.Track
 		for _, album := range albums {
+			var albumTracks []api.Track
 			for _, volume := range album.Volumes {
 				albumTracks = append(albumTracks, volume...)
 			}
@@ -324,5 +339,29 @@ func (m *Model) loadUserPlaylists(wg *sync.WaitGroup, block *menuBlock) {
 				Tracks:   tracks,
 			})
 		}
+	}
+}
+
+func (m *Model) loadStations(wg *sync.WaitGroup, block *menuBlock) {
+	defer wg.Done()
+
+	if m.client == nil {
+		return
+	}
+
+	stations, err := m.client.Stations("ru")
+	if err != nil {
+		block.err = err
+		return
+	}
+
+	for _, st := range stations {
+		block.items = append(block.items, &playlist.Item{
+			Name:      st.Station.Name,
+			Kind:      playlist.STATION,
+			StationId: st.Station.Id,
+			Active:    true,
+			Subitem:   true,
+		})
 	}
 }

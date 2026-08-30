@@ -2,7 +2,7 @@ package style
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dece2183/yamusic-tui/config"
+	"github.com/wellbou/wellya/config"
 )
 
 var (
@@ -45,8 +45,10 @@ var (
 )
 
 var (
-	AccentTextStyle lipgloss.Style
-	ErrorTextStyle  lipgloss.Style
+	AccentTextStyle   lipgloss.Style
+	ErrorTextStyle    lipgloss.Style
+	ToastTextStyle    lipgloss.Style
+	ToastBoxStyle     lipgloss.Style
 )
 
 var (
@@ -120,6 +122,13 @@ func Apply(style *config.Style) {
 
 	AccentTextStyle = lipgloss.NewStyle().Foreground(AccentColor)
 	ErrorTextStyle = lipgloss.NewStyle().Foreground(ErrorColor)
+	ToastTextStyle = lipgloss.NewStyle().
+		Foreground(AccentColor).
+		Bold(true)
+	ToastBoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(AccentColor).
+		Padding(0, 2)
 
 	DialogTitleStyle = lipgloss.NewStyle().
 		Foreground(AccentColor).

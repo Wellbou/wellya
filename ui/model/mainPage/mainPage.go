@@ -1,26 +1,31 @@
 package mainpage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/media/handler"
-	"github.com/dece2183/yamusic-tui/ui/components/input"
-	"github.com/dece2183/yamusic-tui/ui/components/playlist"
-	"github.com/dece2183/yamusic-tui/ui/components/search"
-	"github.com/dece2183/yamusic-tui/ui/components/tracker"
-	"github.com/dece2183/yamusic-tui/ui/components/tracklist"
-	"github.com/dece2183/yamusic-tui/ui/model"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/media/handler"
+	"github.com/wellbou/wellya/ui/components/input"
+	"github.com/wellbou/wellya/ui/components/playlist"
+	"github.com/wellbou/wellya/ui/components/search"
+	"github.com/wellbou/wellya/ui/components/tracker"
+	"github.com/wellbou/wellya/ui/components/tracklist"
+	"github.com/wellbou/wellya/ui/helpers"
+	"github.com/wellbou/wellya/ui/model"
+	"github.com/wellbou/wellya/ui/style"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dece2183/go-clipboard"
 )
+
+const AppVersion = "dev-queue-m3u"
 
 type Model struct {
 	program       *tea.Program
@@ -40,14 +45,40 @@ type Model struct {
 	isSearchActive         bool
 	isAddPlaylistActive    bool
 	isRenamePlaylistActive bool
+	isUploadActive         bool
 	isPlaylistHideOverride bool
+	isConfirmActive        bool
+	isTrackInfoActive      bool
+	showQueue              bool
+	confirmAction          tea.Cmd
+	confirmMessage         string
 
 	currentPlaylistIndex int
+	playGeneration       int
 	likedTracksMap       map[string]bool
 	cachedTracksMap      map[string]bool
+	historyTracks        []api.Track
+	sortMode             int
+
+	toastMessage string
+	toastTimer   int
+
+	lastSearchResult api.SearchResult
+	hasSearchResult  bool
 }
 
-// mainpage.Model constructor.
+type toastTickMsg struct{}
+
+func (m *Model) ShowToast(msg string) tea.Cmd {
+	m.toastMessage = msg
+	m.toastTimer = 150
+	return toastTickCmd
+}
+
+func toastTickCmd() tea.Msg {
+	return toastTickMsg{}
+}
+
 func New(mediaHandler handler.MediaHandler) *Model {
 	m := &Model{}
 
@@ -57,6 +88,7 @@ func New(mediaHandler handler.MediaHandler) *Model {
 	m.mediaHandler = mediaHandler
 	m.likedTracksMap = make(map[string]bool)
 	m.cachedTracksMap = make(map[string]bool)
+	m.historyTracks = make([]api.Track, 0, 100)
 	m.spinner = spinner.New(spinner.WithSpinner(spinner.Points))
 	m.playlists = playlist.New(m.program, "YaMusic")
 	m.tracklist = tracklist.New(m.program, &m.likedTracksMap, &m.cachedTracksMap)
@@ -66,10 +98,6 @@ func New(mediaHandler handler.MediaHandler) *Model {
 
 	return m
 }
-
-//
-// model.Model interface implementation
-//
 
 func (m *Model) Run() error {
 	go m.mediaHandle()
@@ -81,10 +109,6 @@ func (m *Model) Run() error {
 func (m *Model) Send(msg tea.Msg) {
 	go m.program.Send(msg)
 }
-
-//
-// tea.Model interface implementation
-//
 
 func (m *Model) Init() tea.Cmd {
 	m.isLoading = true
@@ -103,6 +127,16 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.isLoading = false
 		return m, model.Cmd(playlist.CURSOR_UP)
 
+	case toastTickMsg:
+		if m.toastTimer > 0 {
+			m.toastTimer--
+			if m.toastTimer == 0 {
+				m.toastMessage = ""
+			} else {
+				cmds = append(cmds, toastTickCmd)
+			}
+		}
+
 	case tea.WindowSizeMsg:
 		m.resize(msg.Width, msg.Height)
 		return m, tea.ClearScreen
@@ -111,16 +145,43 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		controls := config.Current.Controls
 		keypress := msg.String()
 
+		if m.isConfirmActive {
+			switch keypress {
+			case "y", "enter":
+				action := m.confirmAction
+				m.isConfirmActive = false
+				m.confirmAction = nil
+				m.confirmMessage = ""
+				return m, action
+			case "n", "esc":
+				m.isConfirmActive = false
+				m.confirmAction = nil
+				m.confirmMessage = ""
+				return m, nil
+			}
+			return m, nil
+		}
+
+		if m.isTrackInfoActive {
+			switch keypress {
+			case "esc", "enter":
+				m.isTrackInfoActive = false
+				return m, nil
+			}
+			return m, nil
+		}
+
 		switch {
 		case controls.Quit.Contains(keypress):
 			return m, tea.Quit
 		case m.isSearchActive || m.isAddPlaylistActive:
 			m.searchDialog, cmd = m.searchDialog.Update(message)
 			cmds = append(cmds, cmd)
-		case m.isRenamePlaylistActive:
+		case m.isRenamePlaylistActive || m.isUploadActive:
 			m.inputDialog, cmd = m.inputDialog.Update(message)
 			cmds = append(cmds, cmd)
 		case controls.Reload.Contains(keypress):
+			config.InitialLoad()
 			m.isLoading = true
 			cmd = m.playlists.Reset()
 			cmds = append(cmds, cmd)
@@ -144,10 +205,22 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case playlist.Control:
 		switch msg {
 		case playlist.CURSOR_UP, playlist.CURSOR_DOWN:
+			m.showQueue = false
 			selectedPlaylist := m.playlists.SelectedItem()
+
+			if selectedPlaylist.Kind == playlist.HISTORY {
+				selectedPlaylist.Tracks = make([]api.Track, len(m.historyTracks))
+				copy(selectedPlaylist.Tracks, m.historyTracks)
+				m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+			}
 
 			if selectedPlaylist.Kind == playlist.ALBUMS && len(selectedPlaylist.Albums) > 0 {
 				selectedPlaylist.SelectedAlbum = -1
+			}
+
+			if selectedPlaylist.Kind == playlist.STATION && len(selectedPlaylist.Tracks) == 0 && m.client != nil {
+				m.loadStationTracks(selectedPlaylist)
+				m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
 			}
 
 			if m.currentPlaylistIndex >= 0 {
@@ -161,7 +234,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.displayPlaylist(selectedPlaylist)
 			m.indicateCurrentTrackPlaying(m.tracker.IsPlaying())
 
-			m.tracklist.Shufflable = (selectedPlaylist.Kind != playlist.NONE && selectedPlaylist.Kind != playlist.MYWAVE && len(selectedPlaylist.Tracks) > 0)
+			m.tracklist.Shufflable = (selectedPlaylist.Kind != playlist.NONE && selectedPlaylist.Kind != playlist.MYWAVE && selectedPlaylist.Kind != playlist.STATION && selectedPlaylist.Kind != playlist.HISTORY && len(selectedPlaylist.Tracks) > 0)
 		case playlist.RENAME:
 			selectedPlaylist := m.playlists.SelectedItem()
 			if selectedPlaylist.Kind < playlist.USER {
@@ -188,6 +261,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.playSelectedPlaylist(m.tracklist.Index())
 			}
+		case tracklist.SHOW_QUEUE:
+			m.toggleQueue()
 		case tracklist.CURSOR_UP, tracklist.CURSOR_DOWN:
 			currentPlaylist := m.playlists.SelectedItem()
 			cursorIndex := m.tracklist.Index()
@@ -210,7 +285,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.Send(search.UPDATE_SUGGESTIONS)
 		case tracklist.REMOVE_FROM_PLAYLIST:
 			selectedPlaylist := m.playlists.SelectedItem()
-			cmd = m.removeFromPlaylist(selectedPlaylist, m.tracklist.Index())
+			cmd = m.confirmRemoveFromPlaylist(selectedPlaylist, m.tracklist.Index())
 			cmds = append(cmds, cmd)
 		case tracklist.SEARCH:
 			m.searchDialog.Title = "Search"
@@ -236,6 +311,43 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				cmd = m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
 				cmds = append(cmds, cmd)
 			}
+		case tracklist.MOVE_UP:
+			cmd = m.moveTrack(-1)
+			cmds = append(cmds, cmd)
+		case tracklist.MOVE_DOWN:
+			cmd = m.moveTrack(1)
+			cmds = append(cmds, cmd)
+		case tracklist.JUMP_TO_PLAYING:
+			cmd = m.jumpToPlayingTrack()
+			cmds = append(cmds, cmd)
+		case tracklist.ARTIST_BROWSE:
+			cmd = m.browseSelectedTrackArtist()
+			cmds = append(cmds, cmd)
+		case tracklist.TRACK_INFO:
+			m.showTrackInfo()
+		case tracklist.GO_TO_ALBUM:
+			cmd = m.goToAlbum()
+			cmds = append(cmds, cmd)
+		case tracklist.DISLIKE:
+			cmd = m.dislikeSelectedTrack()
+			cmds = append(cmds, cmd)
+		case tracklist.SORT:
+			cmd = m.sortPlaylist()
+			cmds = append(cmds, cmd)
+		case tracklist.REMOVE_FROM_QUEUE:
+			cmd = m.removeFromQueue()
+			cmds = append(cmds, cmd)
+		case tracklist.EXPORT:
+			cmd = m.exportPlaylist()
+			cmds = append(cmds, cmd)
+		case tracklist.UPLOAD:
+			m.inputDialog.Title = "Upload MP3 (file or dir):"
+			m.inputDialog.Action = "upload"
+			m.inputDialog.SetValue("")
+			m.isUploadActive = true
+		case tracklist.STATS:
+			cmd = m.showStats()
+			cmds = append(cmds, cmd)
 		}
 
 	// player control update
@@ -259,12 +371,22 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tracker.CACHE_TRACK:
 			cmd = m.cacheCurrentTrack()
 			cmds = append(cmds, cmd)
+		case tracker.CACHE_ALL_LIKED:
+			go m.cacheAllLikedTracks()
+		case tracker.DOWNLOAD_TRACK:
+			cmd = m.downloadCurrentTrack()
+			cmds = append(cmds, cmd)
+		case tracker.TOGGLE_MUTE:
+			m.tracker.ToggleMute()
 		case tracker.BUFFERING_COMPLETE:
 			cacheMode := config.Current.CacheTracks
 			if cacheMode == config.CACHE_ALL || (cacheMode == config.CACHE_LIKED_ONLY && m.likedTracksMap[m.tracker.CurrentTrack().Id]) {
 				cmd = m.cacheCurrentTrack()
 				cmds = append(cmds, cmd)
 			}
+		case tracker.DISLIKE:
+			cmd = m.dislikePlayingTrack()
+			cmds = append(cmds, cmd)
 		}
 
 		m.tracker, cmd = m.tracker.Update(message)
@@ -282,9 +404,15 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	// input dialog control update
 	case input.Control:
-		m.isRenamePlaylistActive = false
-		cmd = m.renamePlaylistControl(msg)
-		cmds = append(cmds, cmd)
+		if m.isUploadActive {
+			m.isUploadActive = false
+			cmd = m.uploadControl(msg)
+			cmds = append(cmds, cmd)
+		} else {
+			m.isRenamePlaylistActive = false
+			cmd = m.renamePlaylistControl(msg)
+			cmds = append(cmds, cmd)
+		}
 
 	default:
 		if m.isLoading {
@@ -293,7 +421,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.isSearchActive || m.isAddPlaylistActive {
 			m.searchDialog, cmd = m.searchDialog.Update(message)
 			cmds = append(cmds, cmd)
-		} else if m.isRenamePlaylistActive {
+		} else if m.isRenamePlaylistActive || m.isUploadActive {
 			m.inputDialog, cmd = m.inputDialog.Update(message)
 			cmds = append(cmds, cmd)
 		} else {
@@ -316,8 +444,12 @@ func (m *Model) View() string {
 
 	if m.isSearchActive || m.isAddPlaylistActive {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.searchDialog.View())
-	} else if m.isRenamePlaylistActive {
+	} else if m.isRenamePlaylistActive || m.isUploadActive {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.inputDialog.View())
+	} else if m.isConfirmActive {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.confirmView())
+	} else if m.isTrackInfoActive {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.trackInfoView())
 	}
 
 	playlistView := m.playlists.View()
@@ -341,12 +473,19 @@ func (m *Model) View() string {
 		midPanel = lipgloss.JoinVertical(lipgloss.Left, tracklistView, trackerView)
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, playlistView, midPanel)
-}
+	mainView := lipgloss.JoinHorizontal(lipgloss.Bottom, playlistView, midPanel)
 
-//
-// private methods
-//
+	versionLabel := style.TrackVersionStyle.Render(" " + AppVersion + " ")
+	mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, versionLabel)
+
+	if m.toastMessage != "" {
+		toast := style.ToastBoxStyle.Render(style.ToastTextStyle.Render(m.toastMessage))
+		toastOverlay := lipgloss.Place(m.width, 1, lipgloss.Center, lipgloss.Bottom, toast)
+		mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, toastOverlay)
+	}
+
+	return mainView
+}
 
 func (m *Model) resize(width, height int) {
 	m.width, m.height = width, height
@@ -426,7 +565,7 @@ func (m *Model) mediaHandle() {
 				state = handler.STATE_PLAYING
 			} else {
 				if m.tracker.IsStoped() {
-					state = handler.STATE_STOPED
+					state = handler.STATE_STOPPED
 				} else {
 					state = handler.STATE_PAUSED
 				}
@@ -489,4 +628,62 @@ func (m *Model) metadataFilePath() string {
 		return ""
 	}
 	return filepath.Join(tempDir, "metadata.mp3")
+}
+
+func (m *Model) confirmView() string {
+	title := style.DialogTitleStyle.Render(m.confirmMessage)
+	body := style.DialogBoxStyle.Render("(y)es  (n)o")
+	return lipgloss.JoinVertical(lipgloss.Left, title, body)
+}
+
+func (m *Model) trackInfoView() string {
+	if m.tracklist.SelectedItem().Track == nil {
+		return ""
+	}
+	track := m.tracklist.SelectedItem().Track
+
+	valueStyle := lipgloss.NewStyle().Foreground(style.NormalTextColor)
+
+	lines := make([]string, 0)
+	lines = append(lines, style.DialogTitleStyle.Render("Track Info"))
+	lines = append(lines, "")
+
+	lines = append(lines, style.AccentTextStyle.Render("Title: ")+valueStyle.Render(track.Title))
+	if track.Version != "" {
+		lines = append(lines, style.AccentTextStyle.Render("Version: ")+valueStyle.Render(track.Version))
+	}
+	lines = append(lines, style.AccentTextStyle.Render("Artists: ")+valueStyle.Render(helpers.ArtistList(track.Artists)))
+	if len(track.Albums) > 0 {
+		albumNames := make([]string, 0)
+		for _, a := range track.Albums {
+			albumNames = append(albumNames, a.Title)
+		}
+		lines = append(lines, style.AccentTextStyle.Render("Album: ")+valueStyle.Render(strings.Join(albumNames, ", ")))
+		lines = append(lines, style.AccentTextStyle.Render("Year: ")+valueStyle.Render(fmt.Sprintf("%d", track.Albums[0].Year)))
+		if track.Albums[0].Genre != "" {
+			lines = append(lines, style.AccentTextStyle.Render("Genre: ")+valueStyle.Render(track.Albums[0].Genre))
+		}
+	}
+	dur := time.Duration(track.DurationMs) * time.Millisecond
+	lines = append(lines, style.AccentTextStyle.Render("Duration: ")+valueStyle.Render(fmt.Sprintf("%d:%02d", int(dur.Minutes()), int(dur.Seconds())%60)))
+
+	liked := "No"
+	if m.likedTracksMap[track.Id] {
+		liked = "Yes"
+	}
+	lines = append(lines, style.AccentTextStyle.Render("Liked: ")+valueStyle.Render(liked))
+	cached := "No"
+	if m.cachedTracksMap[track.Id] {
+		cached = "Yes"
+	}
+	lines = append(lines, style.AccentTextStyle.Render("Cached: ")+valueStyle.Render(cached))
+
+	body := style.DialogBoxStyle.Render(strings.Join(lines, "\n"))
+	return lipgloss.JoinVertical(lipgloss.Left, body)
+}
+
+func (m *Model) showTrackInfo() {
+	if m.tracklist.SelectedItem().Track != nil {
+		m.isTrackInfoActive = true
+	}
 }

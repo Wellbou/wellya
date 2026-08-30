@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/ui/model"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/ui/model"
+	"github.com/wellbou/wellya/ui/style"
 )
 
 type Control uint
@@ -23,10 +23,11 @@ const (
 	CURSOR_DOWN
 	TYPING
 	UPDATE_SUGGESTIONS
+	TOGGLE_FILTER
 )
 
 const (
-	_UPDATE_SUGGESTIONS_PERIOD = time.Millisecond * 4
+	_UPDATE_SUGGESTIONS_PERIOD = time.Millisecond * 250
 )
 
 type Model struct {
@@ -34,6 +35,7 @@ type Model struct {
 	input                textinput.Model
 	width, height        int
 	value                string
+	filter               int
 	updated              bool
 	lastUpdateTime       time.Time
 	additionalKeyBindigs []key.Binding
@@ -89,7 +91,7 @@ func (m *Model) View() string {
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
-		style.DialogTitleStyle.Render(m.Title),
+		style.DialogTitleStyle.Render(m.Title+" ["+filterName(m.filter)+"]"),
 		style.DialogBoxStyle.MaxWidth(m.width).Render(m.input.View()),
 		lipgloss.NewStyle().MaxWidth(m.width).Render(listView),
 	)
@@ -139,6 +141,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			m.list, cmd = m.list.Update(msg)
 			cmds = append(cmds, cmd)
 			cmds = append(cmds, model.Cmd(CURSOR_DOWN))
+		case key.Matches(msg, key.NewBinding(key.WithKeys("tab"))):
+			cmds = append(cmds, model.Cmd(TOGGLE_FILTER))
 		default:
 			m.input, cmd = m.input.Update(msg)
 			cmds = append(cmds, cmd)
@@ -190,4 +194,27 @@ func (m *Model) InputValue() string {
 
 func (m *Model) SuggestionValue() (string, bool) {
 	return m.value, len(m.value) > 0
+}
+
+func (m *Model) Filter() int {
+	return m.filter
+}
+
+func (m *Model) SetFilter(f int) {
+	m.filter = f
+}
+
+func filterName(f int) string {
+	switch f {
+	case 1:
+		return "Tracks"
+	case 2:
+		return "Albums"
+	case 3:
+		return "Artists"
+	case 4:
+		return "Playlists"
+	default:
+		return "All"
+	}
 }

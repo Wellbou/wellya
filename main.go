@@ -1,14 +1,14 @@
 package main
 
 import (
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/log"
-	"github.com/dece2183/yamusic-tui/media"
-	"github.com/dece2183/yamusic-tui/ui/model"
-	loginpage "github.com/dece2183/yamusic-tui/ui/model/loginPage"
-	mainpage "github.com/dece2183/yamusic-tui/ui/model/mainPage"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/log"
+	"github.com/wellbou/wellya/media"
+	"github.com/wellbou/wellya/ui/model"
+	loginpage "github.com/wellbou/wellya/ui/model/loginPage"
+	mainpage "github.com/wellbou/wellya/ui/model/mainPage"
+	"github.com/wellbou/wellya/ui/style"
 )
 
 func main() {
@@ -17,7 +17,7 @@ func main() {
 
 	err := config.InitialLoad()
 	if err != nil {
-		log.Print(log.LVL_WARNIGN, "config load error: %s", err.Error())
+		log.Print(log.LVL_WARNING, "config load error: %s", err.Error())
 	}
 
 	style.Apply(config.Current.Style)
@@ -31,7 +31,7 @@ func main() {
 		}
 	}
 
-	mediaHandler := media.NewHandler(config.DirName, "Yandex music terminal client")
+	mediaHandler := media.NewHandler(config.DirName, config.AppName)
 	page := mainpage.New(mediaHandler)
 	err = mediaHandler.Start(page.Run)
 	if err != nil {

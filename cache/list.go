@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/bogem/id3v2/v2"
-	"github.com/dece2183/yamusic-tui/api"
+	"github.com/wellbou/wellya/api"
 )
 
 func ListTracks() ([]api.Track, error) {
@@ -33,6 +33,7 @@ func ListTracks() ([]api.Track, error) {
 		if err != nil {
 			continue
 		}
+		defer tag.Close()
 
 		artistNames := strings.Split(tag.Artist(), ",")
 		artists := make([]api.Artist, len(artistNames))
@@ -61,8 +62,6 @@ func ListTracks() ([]api.Track, error) {
 				},
 			})
 		}
-
-		tag.Close()
 	}
 
 	return tracks, nil

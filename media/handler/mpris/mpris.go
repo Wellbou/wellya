@@ -5,7 +5,7 @@ package mpris
 import (
 	"time"
 
-	"github.com/dece2183/yamusic-tui/media/handler"
+	"github.com/wellbou/wellya/media/handler"
 	"github.com/quarckster/go-mpris-server/pkg/events"
 	"github.com/quarckster/go-mpris-server/pkg/server"
 	"github.com/quarckster/go-mpris-server/pkg/types"

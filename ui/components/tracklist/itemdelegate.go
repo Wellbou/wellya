@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/ui/style"
 )
 
 type ItemDelegate struct {
@@ -73,6 +73,9 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 			trackArtistStyle lipgloss.Style
 		)
 
+		trackNum := style.TrackVersionStyle.Render(fmt.Sprintf("%2d ", index+1))
+		trackTitle += trackNum
+
 		if item.IsSuggestion {
 			trackTitleStyle = style.TrackTitleStyle.Foreground(style.InactiveTextColor)
 			trackArtistStyle = style.TrackArtistStyle.Foreground(style.InactiveTextColor)
@@ -83,7 +86,7 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 
 		if item.IsPlaying {
-			trackTitle = style.AccentTextStyle.Render(style.IconPlay) + " "
+			trackTitle += style.AccentTextStyle.Render(style.IconPlay) + " "
 		}
 		if item.Track.Available {
 			trackTitle += trackTitleStyle.Render(item.Track.Title)
@@ -113,7 +116,12 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 			trackCache = style.IconCached
 		}
 
-		trackAddInfo := style.TrackAddInfoStyle.Render(trackCache + " " + trackLike + " " + trackTime)
+		var trackPlayCount string
+		if item.PlayCount > 0 {
+			trackPlayCount = " " + style.TrackVersionStyle.Render(fmt.Sprintf("x%d", item.PlayCount))
+		}
+
+		trackAddInfo := style.TrackAddInfoStyle.Render(trackCache + " " + trackLike + " " + trackTime + trackPlayCount)
 		addInfoLen := lipgloss.Width(trackAddInfo)
 		maxLen := m.Width() - addInfoLen - 2
 		clip := lipgloss.NewStyle().MaxWidth(maxLen - 1)

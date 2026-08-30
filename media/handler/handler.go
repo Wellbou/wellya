@@ -48,7 +48,7 @@ type TrackMetadata struct {
 type PlaybackState int
 
 const (
-	STATE_STOPED PlaybackState = iota
+	STATE_STOPPED PlaybackState = iota
 	STATE_PAUSED
 	STATE_PLAYING
 )

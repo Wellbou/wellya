@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/log"
-	"github.com/dece2183/yamusic-tui/stream"
-	"github.com/dece2183/yamusic-tui/ui/helpers"
-	"github.com/dece2183/yamusic-tui/ui/model"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/log"
+	"github.com/wellbou/wellya/stream"
+	"github.com/wellbou/wellya/ui/helpers"
+	"github.com/wellbou/wellya/ui/model"
+	"github.com/wellbou/wellya/ui/style"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/progress"
@@ -37,6 +37,13 @@ const (
 	BUFFERING_COMPLETE
 	TOGGLE_LYRICS
 	TOGGLE_VIEW
+	CACHE_ALL_LIKED
+	DOWNLOAD_TRACK
+	TOGGLE_MUTE
+	QUALITY_CYCLE
+	TOGGLE_REPEAT
+	SLEEP_TIMER
+	DISLIKE
 )
 
 type ProgressControl float64
@@ -49,6 +56,8 @@ const (
 	_VOLUME_FADE_STEPS     = 2
 	_VOLUME_SNAP_THRESHOLD = 0.005 // snap to 0/1 when close enough
 )
+
+type sleepTickMsg struct{}
 
 var rewindAmount = time.Duration(config.Current.RewindDuration) * time.Second
 
@@ -74,6 +83,13 @@ type Model struct {
 	playerContext  *oto.Context
 	player         *oto.Player
 	trackWrapper   *readWrapper
+	currentBitrate int
+	muted          bool
+	preMuteVolume  float64
+	repeatMode     int
+
+	sleepTimerRemaining int
+	sleepTimerActive    bool
 
 	program  *tea.Program
 	likesMap *map[string]bool
@@ -155,7 +171,11 @@ func (m *Model) View() string {
 		} else {
 			volumeIcon = style.IconVolumeHigh
 		}
-		volumeIndicator = " " + volumeIcon + " " + m.volumeBar.ViewAs(m.volume)
+		if m.muted {
+			volumeIndicator = " " + style.IconVolumeOff + " [MUTED]"
+		} else {
+			volumeIndicator = " " + volumeIcon + " " + m.volumeBar.ViewAs(m.volume)
+		}
 		volumeIndicatorWidth = lipgloss.Width(volumeIndicator)
 	}
 
@@ -203,7 +223,25 @@ func (m *Model) View() string {
 			trackLike = style.IconNotLiked + " "
 		}
 
-		trackAddInfo := style.TrackAddInfoStyle.Render(trackLike + trackTime)
+		var trackBitrate string
+		if m.currentBitrate > 0 {
+			trackBitrate = fmt.Sprintf("%dk ", m.currentBitrate)
+		}
+
+		var repeatIndicator string
+		switch m.repeatMode {
+		case 1:
+			repeatIndicator = style.TrackVersionStyle.Render("[ALL] ")
+		case 2:
+			repeatIndicator = style.TrackVersionStyle.Render("[1] ")
+		}
+
+		sleepLabel := m.SleepTimerLabel()
+		if sleepLabel != "" {
+			sleepLabel = style.TrackVersionStyle.Render(sleepLabel)
+		}
+
+		trackAddInfo := style.TrackAddInfoStyle.Render(trackLike + repeatIndicator + sleepLabel + trackBitrate + trackTime)
 		addInfoLen := lipgloss.Width(trackAddInfo)
 		maxLen := m.Width() - addInfoLen - 4
 		stl := lipgloss.NewStyle().MaxWidth(maxLen - 1)
@@ -298,6 +336,25 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		case controls.PlayerHide.Contains(keypress):
 			m.Hidden = !m.Hidden
 			cmds = append(cmds, model.Cmd(TOGGLE_VIEW))
+		case controls.PlayerCacheAllLiked.Contains(keypress):
+			cmds = append(cmds, model.Cmd(CACHE_ALL_LIKED))
+		case controls.PlayerDownload.Contains(keypress):
+			if !m.IsStoped() {
+				cmds = append(cmds, model.Cmd(DOWNLOAD_TRACK))
+			}
+		case controls.PlayerQualityCycle.Contains(keypress):
+			config.Current.AudioQuality = config.Current.AudioQuality.Next()
+			config.Save()
+			cmds = append(cmds, model.Cmd(QUALITY_CYCLE))
+		case controls.PlayerMute.Contains(keypress):
+			cmds = append(cmds, model.Cmd(TOGGLE_MUTE))
+		case controls.PlayerRepeatMode.Contains(keypress):
+			m.repeatMode = (m.repeatMode + 1) % 3
+			cmds = append(cmds, model.Cmd(TOGGLE_REPEAT))
+		case controls.PlayerSleepTimer.Contains(keypress):
+			cmds = append(cmds, model.Cmd(SLEEP_TIMER))
+		case controls.PlayerDislike.Contains(keypress):
+			cmds = append(cmds, model.Cmd(DISLIKE))
 		}
 
 	// player control update
@@ -309,6 +366,22 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			m.Pause()
 		case STOP:
 			m.Stop()
+		case SLEEP_TIMER:
+			cmd = m.cycleSleepTimer()
+			cmds = append(cmds, cmd)
+		}
+
+	case sleepTickMsg:
+		if m.sleepTimerActive {
+			m.sleepTimerRemaining--
+			if m.sleepTimerRemaining <= 0 {
+				m.sleepTimerRemaining = 0
+				m.sleepTimerActive = false
+				m.Stop()
+				cmds = append(cmds, model.Cmd(STOP))
+			} else {
+				cmds = append(cmds, m.sleepTickCmd())
+			}
 		}
 
 	// track progress update
@@ -367,10 +440,33 @@ func (m *Model) SetVolume(v float64) {
 	config.Save()
 }
 
+func (m *Model) ToggleMute() {
+	if m.muted {
+		m.SetVolume(m.preMuteVolume)
+		m.muted = false
+	} else {
+		m.preMuteVolume = m.volume
+		m.SetVolume(0)
+		m.muted = true
+	}
+}
+
+func (m *Model) IsMuted() bool {
+	return m.muted
+}
+
+func (m *Model) RepeatMode() int {
+	return m.repeatMode
+}
+
 func (m *Model) SetLirycs(show bool) {
 	m.showLyrics = show
 	config.Current.ShowLyrics = m.showLyrics
 	config.Save()
+}
+
+func (m *Model) SetBitrate(bitrate int) {
+	m.currentBitrate = bitrate
 }
 
 func (m *Model) Volume() float64 {
@@ -379,7 +475,12 @@ func (m *Model) Volume() float64 {
 
 func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyrics []api.LyricPair) {
 	m.showError = false
-	m.volume = config.Current.Volume
+	m.currentBitrate = 0
+	if m.muted {
+		m.volume = 0
+	} else {
+		m.volume = config.Current.Volume
+	}
 	m.volumeIncremet = m.volume / _VOLUME_FADE_STEPS
 
 	if m.player != nil {
@@ -506,6 +607,46 @@ func (m *Model) Playtime() time.Duration {
 		return m.playtime
 	}
 	return m.playtime + time.Since(m.playStarted)
+}
+
+func (m *Model) cycleSleepTimer() tea.Cmd {
+	durations := []int{0, 15, 30, 45, 60, 90, 120}
+
+	nextIdx := 0
+	if !m.sleepTimerActive {
+		nextIdx = 1
+	} else {
+		currentMinutes := m.sleepTimerRemaining / 60
+		for i, d := range durations {
+			if d == currentMinutes && i+1 < len(durations) {
+				nextIdx = i + 1
+				break
+			}
+		}
+	}
+
+	m.sleepTimerRemaining = durations[nextIdx] * 60
+	m.sleepTimerActive = durations[nextIdx] > 0
+
+	if m.sleepTimerActive {
+		return m.sleepTickCmd()
+	}
+	return nil
+}
+
+func (m *Model) sleepTickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return sleepTickMsg{}
+	})
+}
+
+func (m *Model) SleepTimerLabel() string {
+	if !m.sleepTimerActive || m.sleepTimerRemaining <= 0 {
+		return ""
+	}
+	minutes := m.sleepTimerRemaining / 60
+	seconds := m.sleepTimerRemaining % 60
+	return fmt.Sprintf("[Sleep %02d:%02d] ", minutes, seconds)
 }
 
 func (m *Model) ShowError(text string) {

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dece2183/yamusic-tui/config"
+	"github.com/wellbou/wellya/config"
 )
 
 type Level int
@@ -14,14 +14,14 @@ type Level int
 const (
 	LVL_PANIC Level = iota
 	LVL_ERROR
-	LVL_WARNIGN
+	LVL_WARNING
 	LVL_INFO
 )
 
 var lvlName = map[Level]string{
 	LVL_PANIC:   "PANIC",
 	LVL_ERROR:   "ERROR",
-	LVL_WARNIGN: "WARN",
+	LVL_WARNING: "WARN",
 	LVL_INFO:    "INFO",
 }
 

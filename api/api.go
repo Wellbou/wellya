@@ -75,7 +75,7 @@ func proccessRequest[RetT any](req *http.Request) (result RetT, invInfo InvocInf
 		}
 
 		dec := json.NewDecoder(resp.Body)
-		dec.Decode(&respBody)
+		err = dec.Decode(&respBody)
 
 		invInfo = respBody.InvocationInfo
 		result = respBody.Result
@@ -86,14 +86,14 @@ func proccessRequest[RetT any](req *http.Request) (result RetT, invInfo InvocInf
 		}
 
 		dec := json.NewDecoder(resp.Body)
-		dec.Decode(&respBody)
+		err = dec.Decode(&respBody)
 
 		invInfo = respBody.InvocationInfo
 		err = respBody.Error
 	case http.StatusUnauthorized:
 		var respBody UnauthorizedError
 		dec := json.NewDecoder(resp.Body)
-		dec.Decode(&respBody)
+		err = dec.Decode(&respBody)
 		err = respBody
 		invInfo.ReqId = respBody.RequestId
 	default:
@@ -241,11 +241,11 @@ func Token(username, password string) (token string, err error) {
 
 	respBody := map[string]string{}
 	dec := json.NewDecoder(resp.Body)
-	dec.Decode(&respBody)
+	err = dec.Decode(&respBody)
 
 	errDesc, ok := respBody["error_description"]
 	if ok {
-		err = fmt.Errorf(errDesc)
+		err = errors.New(errDesc)
 		return
 	}
 
@@ -273,12 +273,17 @@ func TrackCoverLink(track *Track, size int) string {
 }
 
 func DownloadTrackCover(dst io.Writer, track *Track, size int) (string, error) {
-	url := TrackCoverLink(track, size)
-	if len(url) == 0 {
-		return "", errors.New("cover not presented")
+	coverUrl := TrackCoverLink(track, size)
+	if len(coverUrl) == 0 {
+		return "", errors.New("cover not available")
 	}
 
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, coverUrl, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -381,7 +386,9 @@ func (client *YaMusicClient) PlaylistTracks(kind uint64, userId uint64, mixed bo
 
 	tracks = make([]Track, 0, playlists[0].TrackCount)
 	for i := 0; i < playlists[0].TrackCount; i++ {
-		tracks = append(tracks, playlists[0].Tracks[i].Track)
+		trk := playlists[0].Tracks[i].Track
+		trk.PlayCount = playlists[0].Tracks[i].PlayCount
+		tracks = append(tracks, trk)
 	}
 
 	return
@@ -402,7 +409,7 @@ func (client *YaMusicClient) StationTracks(id StationId, lastTrack *Track) (trac
 	if lastTrack != nil {
 		params.Add("queue", fmt.Sprint(lastTrack.Id))
 	}
-	tracks, _, err = getRequest[StationTracks](client.token, fmt.Sprintf("/rotor/station/%s/tracks", id), nil)
+	tracks, _, err = getRequest[StationTracks](client.token, fmt.Sprintf("/rotor/station/%s/tracks", id), params)
 	return
 }
 
@@ -453,9 +460,12 @@ func (client *YaMusicClient) RotorSessionFeedback(sessionId string, feedback *Ro
 }
 
 func (client *YaMusicClient) RotorSessionTracks(sessionId string, feedbacks []*RotorFeedback, trackQueue []Track) (tracks StationTracks, err error) {
-	queue := make([]string, len(trackQueue))
+	queue := make([]string, 0, len(trackQueue))
 	for i := range trackQueue {
-		queue[i] = fmt.Sprintf("%s:%d", trackQueue[i].Id, trackQueue[i].Albums[0].Id)
+		if len(trackQueue[i].Albums) == 0 {
+			continue
+		}
+		queue = append(queue, fmt.Sprintf("%s:%d", trackQueue[i].Id, trackQueue[i].Albums[0].Id))
 	}
 	body := map[string]interface{}{
 		"feedbacks": feedbacks,
@@ -470,14 +480,15 @@ func (client *YaMusicClient) RotorSessionTracks(sessionId string, feedbacks []*R
 }
 
 func (client *YaMusicClient) PlayTrack(track *Track, fromCache bool) (err error) {
+	durationSeconds := (track.DurationMs / 1000) + 1
 	queryParams := url.Values{
 		"uid":                  {fmt.Sprint(client.userid)},
 		"from":                 {client.name},
 		"play-id":              {client.sessionid},
 		"track-id":             {track.Id},
 		"from-cache":           {fmt.Sprint(fromCache)},
-		"track-length-seconds": {fmt.Sprint(track.DurationMs + 1000)},
-		"total-played-seconds": {fmt.Sprint(track.DurationMs + 1000)},
+		"track-length-seconds": {fmt.Sprint(durationSeconds)},
+		"total-played-seconds": {fmt.Sprint(durationSeconds)},
 		"timestamp":            {nowTimestamp()},
 	}
 	_, _, err = postRequest[interface{}](client.token, "/play-audio", queryParams)
@@ -614,6 +625,7 @@ func (client *YaMusicClient) TrackLyricsRequest(trackId string) (LRCLyrics []Lyr
 	if err != nil {
 		return []LyricPair{}, err
 	}
+	defer LRCLyricsResponse.Body.Close()
 	data, err := io.ReadAll(LRCLyricsResponse.Body)
 	if err != nil {
 		return []LyricPair{}, err

@@ -3,9 +3,9 @@ package tracklist
 import (
 	"strings"
 
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/ui/model"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/ui/model"
+	"github.com/wellbou/wellya/ui/style"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -30,6 +30,20 @@ const (
 	REMOVE_FROM_PLAYLIST
 	BACK
 	TOGGLE_VIEW
+	MOVE_UP
+	MOVE_DOWN
+	JUMP_TO_PLAYING
+	ARTIST_BROWSE
+	SHOW_QUEUE
+	TRACK_INFO
+	GO_TO_ALBUM
+	DISLIKE
+	SORT
+	FILTER
+	REMOVE_FROM_QUEUE
+	EXPORT
+	UPLOAD
+	STATS
 )
 
 type Model struct {
@@ -87,7 +101,7 @@ func (m *Model) View() string {
 		m.list.Title = m.Title
 	}
 
-	m.helpMap.Shafflable = m.Shufflable
+	m.helpMap.Shufflable = m.Shufflable
 	helpView := m.help.View(m.helpMap)
 	m.list.SetHeight(m.height - lipgloss.Height(helpView) - 4)
 
@@ -111,6 +125,16 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		controls := config.Current.Controls
 		keypress := msg.String()
 
+		if controls.TracksFilter.Contains(keypress) {
+			if m.list.FilteringEnabled() {
+				m.list.SetFilteringEnabled(false)
+				m.list.ResetFilter()
+			} else {
+				m.list.SetFilteringEnabled(true)
+			}
+			return m, nil
+		}
+
 		m.list, cmd = m.list.Update(msg)
 		cmds = append(cmds, cmd)
 
@@ -124,8 +148,26 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		case controls.CursorDown.Contains(keypress):
 			cmds = append(cmds, model.Cmd(CURSOR_DOWN))
 		case controls.TracksNextPage.Contains(keypress):
+			pageSize := m.list.Height() / 3
+			if pageSize < 1 {
+				pageSize = 1
+			}
+			newIdx := m.list.Index() - pageSize
+			if newIdx < 0 {
+				newIdx = 0
+			}
+			m.list.Select(newIdx)
 			cmds = append(cmds, model.Cmd(PAGE_UP))
 		case controls.TracksPrevPage.Contains(keypress):
+			pageSize := m.list.Height() / 3
+			if pageSize < 1 {
+				pageSize = 1
+			}
+			newIdx := m.list.Index() + pageSize
+			if newIdx >= len(m.list.Items()) {
+				newIdx = len(m.list.Items()) - 1
+			}
+			m.list.Select(newIdx)
 			cmds = append(cmds, model.Cmd(PAGE_DOWN))
 		case controls.TracksSearch.Contains(keypress):
 			cmds = append(cmds, model.Cmd(SEARCH))
@@ -144,6 +186,32 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		case controls.TracksHide.Contains(keypress):
 			m.Hidden = !m.Hidden
 			cmds = append(cmds, model.Cmd(TOGGLE_VIEW))
+		case controls.TracksMoveUp.Contains(keypress):
+			cmds = append(cmds, model.Cmd(MOVE_UP))
+		case controls.TracksMoveDown.Contains(keypress):
+			cmds = append(cmds, model.Cmd(MOVE_DOWN))
+		case controls.TracksJumpToPlaying.Contains(keypress):
+			cmds = append(cmds, model.Cmd(JUMP_TO_PLAYING))
+		case controls.TracksArtistBrowse.Contains(keypress):
+			cmds = append(cmds, model.Cmd(ARTIST_BROWSE))
+		case controls.TracksShowQueue.Contains(keypress):
+			cmds = append(cmds, model.Cmd(SHOW_QUEUE))
+		case controls.TracksInfo.Contains(keypress):
+			cmds = append(cmds, model.Cmd(TRACK_INFO))
+		case controls.TracksGoToAlbum.Contains(keypress):
+			cmds = append(cmds, model.Cmd(GO_TO_ALBUM))
+		case controls.TracksDislike.Contains(keypress):
+			cmds = append(cmds, model.Cmd(DISLIKE))
+		case controls.TracksSort.Contains(keypress):
+			cmds = append(cmds, model.Cmd(SORT))
+		case controls.TracksRemoveFromQueue.Contains(keypress):
+			cmds = append(cmds, model.Cmd(REMOVE_FROM_QUEUE))
+		case controls.TracksExport.Contains(keypress):
+			cmds = append(cmds, model.Cmd(EXPORT))
+		case controls.TracksUpload.Contains(keypress):
+			cmds = append(cmds, model.Cmd(UPLOAD))
+		case controls.TracksStats.Contains(keypress):
+			cmds = append(cmds, model.Cmd(STATS))
 		}
 	}
 

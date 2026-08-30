@@ -1,8 +1,8 @@
 package tracklist
 
 import (
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/ui/helpers"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/ui/helpers"
 )
 
 type Item struct {
@@ -11,6 +11,7 @@ type Item struct {
 	Artists      string
 	IsPlaying    bool
 	IsSuggestion bool
+	PlayCount    int
 }
 
 func NewItem(track *api.Track) Item {
@@ -29,7 +30,7 @@ func NewAlbumItem(album *api.Album) Item {
 
 func (i Item) FilterValue() string {
 	if i.Track != nil {
-		return i.Track.Title
+		return i.Track.Title + " " + i.Artists
 	}
 	if i.Album != nil {
 		return i.Album.Title

@@ -3,8 +3,8 @@
 package media
 
 import (
-	"github.com/dece2183/yamusic-tui/media/handler"
-	"github.com/dece2183/yamusic-tui/media/handler/macos"
+	"github.com/wellbou/wellya/media/handler"
+	"github.com/wellbou/wellya/media/handler/macos"
 )
 
 func NewHandler(name, description string) handler.MediaHandler {

@@ -4,21 +4,28 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/dece2183/yamusic-tui/config"
+	"github.com/wellbou/wellya/config"
 )
 
 type helpKeyMap struct {
-	PlayPause    key.Binding
-	PrevTrack    key.Binding
-	NextTrack    key.Binding
-	LikeUnlike   key.Binding
-	CacheTrack   key.Binding
-	Forward      key.Binding
-	Backward     key.Binding
-	VolUp        key.Binding
-	VolDown      key.Binding
-	ToggleLyrics key.Binding
-	HidePlayer   key.Binding
+	PlayPause     key.Binding
+	PrevTrack     key.Binding
+	NextTrack     key.Binding
+	LikeUnlike    key.Binding
+	CacheTrack    key.Binding
+	Forward       key.Binding
+	Backward      key.Binding
+	VolUp         key.Binding
+	VolDown       key.Binding
+	ToggleLyrics  key.Binding
+	HidePlayer    key.Binding
+	CacheAllLiked key.Binding
+	Download      key.Binding
+	Mute          key.Binding
+	QualityCycle  key.Binding
+	RepeatMode    key.Binding
+	SleepTimer    key.Binding
+	Dislike       key.Binding
 }
 
 func newHelpMap() *helpKeyMap {
@@ -68,6 +75,34 @@ func newHelpMap() *helpKeyMap {
 			controls.PlayerHide.Binding(),
 			controls.PlayerHide.Help("hide"),
 		),
+		CacheAllLiked: key.NewBinding(
+			controls.PlayerCacheAllLiked.Binding(),
+			controls.PlayerCacheAllLiked.Help("cache all liked"),
+		),
+		Download: key.NewBinding(
+			controls.PlayerDownload.Binding(),
+			controls.PlayerDownload.Help("download"),
+		),
+		Mute: key.NewBinding(
+			controls.PlayerMute.Binding(),
+			controls.PlayerMute.Help("mute"),
+		),
+		QualityCycle: key.NewBinding(
+			controls.PlayerQualityCycle.Binding(),
+			controls.PlayerQualityCycle.Help("quality"),
+		),
+		RepeatMode: key.NewBinding(
+			controls.PlayerRepeatMode.Binding(),
+			controls.PlayerRepeatMode.Help("repeat"),
+		),
+		SleepTimer: key.NewBinding(
+			controls.PlayerSleepTimer.Binding(),
+			controls.PlayerSleepTimer.Help("sleep timer"),
+		),
+		Dislike: key.NewBinding(
+			controls.PlayerDislike.Binding(),
+			controls.PlayerDislike.Help("dislike"),
+		),
 	}
 }
 
@@ -79,6 +114,6 @@ func (k helpKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.PlayPause, k.LikeUnlike, k.ToggleLyrics, k.CacheTrack},
 		{k.NextTrack, k.PrevTrack, k.Forward, k.Backward},
-		{k.VolUp, k.VolDown, k.HidePlayer},
+		{k.VolUp, k.VolDown, k.Mute, k.HidePlayer, k.CacheAllLiked, k.Download, k.QualityCycle, k.RepeatMode, k.SleepTimer, k.Dislike},
 	}
 }

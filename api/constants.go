@@ -21,6 +21,7 @@ const (
 	ROTOR_SKIP           string = "skip"
 	ROTOR_LIKE           string = "like"
 	ROTOR_UNLIKE         string = "unlike"
+	ROTOR_DISLIKE        string = "dislike"
 )
 
 var (

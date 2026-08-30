@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dece2183/yamusic-tui/config"
+	"github.com/wellbou/wellya/config"
 )
 
 func getCacheDir() (string, error) {
@@ -45,7 +45,11 @@ func Read(trackId string) (*os.File, int64, error) {
 		return nil, 0, err
 	}
 
-	stat, _ := file.Stat()
+	stat, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, 0, err
+	}
 	return file, stat.Size(), nil
 }
 
@@ -55,7 +59,7 @@ func Write(trackId string) (*os.File, error) {
 		return nil, err
 	}
 
-	file, err := os.OpenFile(filepath.Join(dir, trackId+".mp3"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	file, err := os.OpenFile(filepath.Join(dir, trackId+".mp3"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}

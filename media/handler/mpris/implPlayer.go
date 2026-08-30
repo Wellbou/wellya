@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dece2183/yamusic-tui/media/handler"
+	"github.com/wellbou/wellya/media/handler"
 	"github.com/godbus/dbus/v5"
 	"github.com/quarckster/go-mpris-server/pkg/types"
 )
-
-// MediaPlayer2.Player dbus interface implementation
 
 func (mh *MprisHandler) Next() error {
 	mh.msgChan <- handler.Message{
@@ -96,7 +94,7 @@ func (mh *MprisHandler) PlaybackStatus() (types.PlaybackStatus, error) {
 	}
 
 	switch resp {
-	case handler.STATE_STOPED:
+	case handler.STATE_STOPPED:
 		return types.PlaybackStatusStopped, nil
 	case handler.STATE_PAUSED:
 		return types.PlaybackStatusPaused, nil

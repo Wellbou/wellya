@@ -1,4 +1,4 @@
-module github.com/dece2183/yamusic-tui
+module github.com/wellbou/wellya
 
 go 1.21
 

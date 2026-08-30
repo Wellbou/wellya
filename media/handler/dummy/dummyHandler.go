@@ -5,7 +5,7 @@ package dummy
 import (
 	"time"
 
-	"github.com/dece2183/yamusic-tui/media/handler"
+	"github.com/wellbou/wellya/media/handler"
 )
 
 type DummyHandler struct {

@@ -1,6 +1,6 @@
 package playlist
 
-import "github.com/dece2183/yamusic-tui/api"
+import "github.com/wellbou/wellya/api"
 
 type Item struct {
 	Uid uint64
@@ -54,7 +54,7 @@ func (pl *Item) RemoveTrack(trackId string) int {
 
 			if len(pl.Tracks) == 0 {
 				pl.SelectedTrack = 0
-				pl.CurrentTrack = 0
+				pl.CurrentTrack = -1
 			} else {
 				if pl.SelectedTrack > i {
 					pl.SelectedTrack--

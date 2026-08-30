@@ -1,17 +1,23 @@
 package mainpage
 
 import (
+	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/log"
-	"github.com/dece2183/yamusic-tui/ui/components/input"
-	"github.com/dece2183/yamusic-tui/ui/components/playlist"
-	"github.com/dece2183/yamusic-tui/ui/components/search"
-	"github.com/dece2183/yamusic-tui/ui/components/tracklist"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/log"
+	"github.com/wellbou/wellya/ui/components/input"
+	"github.com/wellbou/wellya/ui/components/playlist"
+	"github.com/wellbou/wellya/ui/components/search"
+	"github.com/wellbou/wellya/ui/components/tracklist"
+	"github.com/wellbou/wellya/ui/helpers"
 )
 
 func (m *Model) addPlaylistControl(msg search.Control) tea.Cmd {
@@ -22,7 +28,7 @@ func (m *Model) addPlaylistControl(msg search.Control) tea.Cmd {
 		m.isAddPlaylistActive = false
 
 		selectedPlaylist := m.playlists.SelectedItem()
-		if len(selectedPlaylist.Tracks) == 0 {
+		if len(selectedPlaylist.Tracks) == 0 || selectedPlaylist.Kind == playlist.HISTORY {
 			return nil
 		}
 
@@ -133,13 +139,34 @@ func (m *Model) renamePlaylistControl(msg input.Control) tea.Cmd {
 	return cmd
 }
 
+func (m *Model) confirmRemoveFromPlaylist(pl *playlist.Item, index int) tea.Cmd {
+	if index >= len(pl.Tracks) {
+		return nil
+	}
+
+	var msg string
+	switch pl.Kind {
+	case playlist.LOCAL:
+		msg = "Remove cached track? (y/n)"
+	default:
+		msg = "Remove track from playlist? (y/n)"
+	}
+
+	m.confirmAction = func() tea.Msg {
+		return m.removeFromPlaylist(pl, index)()
+	}
+	m.confirmMessage = msg
+	m.isConfirmActive = true
+	return nil
+}
+
 func (m *Model) removeFromPlaylist(pl *playlist.Item, index int) tea.Cmd {
 	if index >= len(pl.Tracks) {
 		return nil
 	}
 
 	switch pl.Kind {
-	case playlist.NONE, playlist.MYWAVE, playlist.ALBUMS:
+	case playlist.NONE, playlist.MYWAVE, playlist.STATION, playlist.ALBUMS, playlist.HISTORY:
 		return nil
 	case playlist.LIKES:
 		selectedTrack := pl.Tracks[index]
@@ -202,9 +229,55 @@ func (m *Model) removeFromPlaylist(pl *playlist.Item, index int) tea.Cmd {
 	}
 }
 
+func (m *Model) removeFromQueue() tea.Cmd {
+	selectedPlaylist := m.playlists.SelectedItem()
+	index := m.tracklist.Index()
+
+	if index >= len(selectedPlaylist.Tracks) {
+		return nil
+	}
+
+	switch selectedPlaylist.Kind {
+	case playlist.NONE, playlist.MYWAVE, playlist.STATION, playlist.ALBUMS, playlist.HISTORY, playlist.LOCAL:
+		return nil
+	}
+
+	deleteCurrentTrack := index == selectedPlaylist.CurrentTrack
+
+	if len(selectedPlaylist.Tracks) < 2 {
+		return m.ShowToast("can't remove last track from queue")
+	}
+
+	selectedPlaylist.Tracks = slices.Delete(selectedPlaylist.Tracks, index, index+1)
+
+	if deleteCurrentTrack {
+		selectedPlaylist.CurrentTrack = -1
+	} else if selectedPlaylist.CurrentTrack > index {
+		selectedPlaylist.CurrentTrack--
+	}
+
+	if index >= len(selectedPlaylist.Tracks) {
+		selectedPlaylist.SelectedTrack = len(selectedPlaylist.Tracks) - 1
+	} else {
+		selectedPlaylist.SelectedTrack = index
+	}
+
+	cmd := m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+	m.displayPlaylist(selectedPlaylist)
+
+	if m.currentPlaylistIndex >= 0 {
+		currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
+		if selectedPlaylist.IsSame(currentPlaylist) && m.tracker.IsPlaying() {
+			m.indicateCurrentTrackPlaying(true)
+		}
+	}
+
+	return tea.Batch(cmd, m.ShowToast("removed from queue"))
+}
+
 func (m *Model) shufflePlaylist(pl *playlist.Item) tea.Cmd {
 	var cmds []tea.Cmd
-	if pl.Kind == playlist.NONE || pl.Kind == playlist.MYWAVE || len(pl.Tracks) == 0 {
+	if pl.Kind == playlist.NONE || pl.Kind == playlist.MYWAVE || pl.Kind == playlist.STATION || pl.Kind == playlist.HISTORY || len(pl.Tracks) == 0 {
 		return nil
 	}
 
@@ -283,7 +356,9 @@ func (m *Model) displayPlaylist(pl *playlist.Item) {
 
 	trackList := make([]tracklist.Item, len(pl.Tracks))
 	for i := range pl.Tracks {
-		trackList[i] = tracklist.NewItem(&pl.Tracks[i])
+		item := tracklist.NewItem(&pl.Tracks[i])
+		item.PlayCount = pl.Tracks[i].PlayCount
+		trackList[i] = item
 	}
 	if pl.Rotor && len(trackList) > 0 {
 		trackList[len(trackList)-1].IsSuggestion = true
@@ -295,16 +370,31 @@ func (m *Model) displayPlaylist(pl *playlist.Item) {
 	switch pl.Kind {
 	case playlist.MYWAVE:
 		m.tracklist.Title = "My wave"
+	case playlist.STATION:
+		m.tracklist.Title = pl.Name
 	case playlist.LIKES:
 		m.tracklist.Title = "Liked tracks"
 	case playlist.LOCAL:
 		m.tracklist.Title = "Cached tracks"
+	case playlist.HISTORY:
+		m.tracklist.Title = "History"
+	case playlist.ARTIST:
+		m.tracklist.Title = "Artist: " + pl.Name
 	default:
 		if pl.Kind == playlist.ALBUMS && len(pl.Albums) > 0 && pl.SelectedAlbum >= 0 {
 			m.tracklist.Title = "Tracks from " + pl.Albums[pl.SelectedAlbum].Title
 		} else {
 			m.tracklist.Title = "Tracks from " + pl.Name
 		}
+	}
+
+	if len(pl.Tracks) > 0 {
+		var totalMs int
+		for _, t := range pl.Tracks {
+			totalMs += t.DurationMs
+		}
+		total := time.Duration(totalMs) * time.Millisecond
+		m.tracklist.Title += fmt.Sprintf("  [%d:%02d:%02d]", int(total.Hours()), int(total.Minutes())%60, int(total.Seconds())%60)
 	}
 }
 
@@ -320,5 +410,255 @@ func (m *Model) indicateCurrentTrackPlaying(playing bool) {
 		track := m.tracklist.Items()[currentPlaylist.CurrentTrack]
 		track.IsPlaying = playing
 		m.tracklist.SetItem(currentPlaylist.CurrentTrack, track)
+
+		if playing {
+			m.tracklist.Select(currentPlaylist.CurrentTrack)
+		}
 	}
+}
+
+func (m *Model) jumpToPlayingTrack() tea.Cmd {
+	if m.currentPlaylistIndex < 0 {
+		return nil
+	}
+
+	currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
+	m.playlists.Select(m.currentPlaylistIndex)
+	m.displayPlaylist(currentPlaylist)
+
+	if currentPlaylist.CurrentTrack >= 0 && currentPlaylist.CurrentTrack < len(currentPlaylist.Tracks) {
+		m.tracklist.Select(currentPlaylist.CurrentTrack)
+	}
+
+	if m.tracker.IsPlaying() {
+		m.indicateCurrentTrackPlaying(true)
+	}
+
+	return nil
+}
+
+func (m *Model) toggleQueue() {
+	if m.showQueue {
+		m.showQueue = false
+		selectedPlaylist := m.playlists.SelectedItem()
+		m.displayPlaylist(selectedPlaylist)
+		if m.currentPlaylistIndex >= 0 {
+			currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
+			if selectedPlaylist.IsSame(currentPlaylist) {
+				m.tracklist.Select(currentPlaylist.SelectedTrack)
+				if m.tracker.IsPlaying() {
+					m.indicateCurrentTrackPlaying(true)
+				}
+			}
+		}
+		return
+	}
+
+	if m.currentPlaylistIndex < 0 {
+		return
+	}
+
+	currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
+	if currentPlaylist.CurrentTrack < 0 || currentPlaylist.CurrentTrack >= len(currentPlaylist.Tracks)-1 {
+		return
+	}
+
+	upNext := currentPlaylist.Tracks[currentPlaylist.CurrentTrack+1:]
+	if len(upNext) == 0 {
+		return
+	}
+
+	m.showQueue = true
+	trackList := make([]tracklist.Item, len(upNext))
+	for i := range upNext {
+		trackList[i] = tracklist.NewItem(&upNext[i])
+	}
+
+	m.tracklist.SetItems(trackList)
+	m.tracklist.Select(0)
+	m.tracklist.Title = "Up Next"
+}
+
+func (m *Model) sortPlaylist() tea.Cmd {
+	selectedPlaylist := m.playlists.SelectedItem()
+	if len(selectedPlaylist.Tracks) == 0 || selectedPlaylist.Kind == playlist.MYWAVE || selectedPlaylist.Kind == playlist.STATION || selectedPlaylist.Kind == playlist.HISTORY || selectedPlaylist.Kind == playlist.NONE {
+		return nil
+	}
+
+	m.sortMode = (m.sortMode + 1) % 4
+
+	currentTrackId := ""
+	if selectedPlaylist.CurrentTrack >= 0 && selectedPlaylist.CurrentTrack < len(selectedPlaylist.Tracks) {
+		currentTrackId = selectedPlaylist.Tracks[selectedPlaylist.CurrentTrack].Id
+	}
+	selectedTrackId := ""
+	if m.tracklist.Index() >= 0 && m.tracklist.Index() < len(selectedPlaylist.Tracks) {
+		selectedTrackId = selectedPlaylist.Tracks[m.tracklist.Index()].Id
+	}
+
+	switch m.sortMode {
+	case 1:
+		slices.SortFunc(selectedPlaylist.Tracks, func(a, b api.Track) int {
+			return strings.Compare(a.Title, b.Title)
+		})
+	case 2:
+		slices.SortFunc(selectedPlaylist.Tracks, func(a, b api.Track) int {
+			aa := ""
+			bb := ""
+			if len(a.Artists) > 0 {
+				aa = a.Artists[0].Name
+			}
+			if len(b.Artists) > 0 {
+				bb = b.Artists[0].Name
+			}
+			return strings.Compare(aa, bb)
+		})
+	case 3:
+		slices.SortFunc(selectedPlaylist.Tracks, func(a, b api.Track) int {
+			return a.DurationMs - b.DurationMs
+		})
+	default:
+		return nil
+	}
+
+	for i, t := range selectedPlaylist.Tracks {
+		if t.Id == currentTrackId {
+			selectedPlaylist.CurrentTrack = i
+		}
+		if t.Id == selectedTrackId {
+			selectedPlaylist.SelectedTrack = i
+		}
+	}
+
+	cmd := m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+	m.displayPlaylist(selectedPlaylist)
+	m.tracklist.Select(selectedPlaylist.SelectedTrack)
+
+	if m.currentPlaylistIndex >= 0 {
+		currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
+		if selectedPlaylist.IsSame(currentPlaylist) && m.tracker.IsPlaying() {
+			m.indicateCurrentTrackPlaying(true)
+		}
+	}
+
+	return cmd
+}
+
+func (m *Model) exportPlaylist() tea.Cmd {
+	selectedPlaylist := m.playlists.SelectedItem()
+	if len(selectedPlaylist.Tracks) == 0 {
+		return m.ShowToast("nothing to export")
+	}
+
+	downloadDir := config.Current.DownloadDir
+	if downloadDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return m.ShowToast("export: no home dir")
+		}
+		downloadDir = filepath.Join(home, "Music", "wellya")
+	}
+
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
+		return m.ShowToast("export: mkdir failed")
+	}
+
+	baseName := sanitizeFilename(selectedPlaylist.Name)
+	if baseName == "" {
+		baseName = "playlist"
+	}
+	filename := baseName + ".m3u"
+	filePath := filepath.Join(downloadDir, filename)
+
+	for i := 1; ; i++ {
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			break
+		}
+		filename = fmt.Sprintf("%s_%d.m3u", baseName, i)
+		filePath = filepath.Join(downloadDir, filename)
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return m.ShowToast("export: create failed")
+	}
+	defer file.Close()
+
+	fmt.Fprintln(file, "#EXTM3U")
+	for _, t := range selectedPlaylist.Tracks {
+		artist := ""
+		if len(t.Artists) > 0 {
+			artist = t.Artists[0].Name
+			if len(t.Artists) > 1 {
+				artist = helpers.ArtistList(t.Artists)
+			}
+		}
+		durationSec := t.DurationMs / 1000
+		fmt.Fprintf(file, "#EXTINF:%d,%s - %s\n", durationSec, artist, t.Title)
+		link := api.ShareTrackLink(&t)
+		if link == "" {
+			link = t.Id
+		}
+		fmt.Fprintln(file, link)
+	}
+
+	return m.ShowToast("Exported: " + filename)
+}
+
+func (m *Model) showStats() tea.Cmd {
+	totalPlaylists := len(m.playlists.Items())
+	totalTracks := 0
+	var totalMs int
+	cachedCount := len(m.cachedTracksMap)
+	likedCount := 0
+	for _, pl := range m.playlists.Items() {
+		totalTracks += len(pl.Tracks)
+		for _, t := range pl.Tracks {
+			totalMs += t.DurationMs
+		}
+		if pl.Kind == playlist.LIKES {
+			likedCount = len(pl.Tracks)
+		}
+	}
+	totalDur := time.Duration(totalMs) * time.Millisecond
+	historyCount := len(m.historyTracks)
+	msg := fmt.Sprintf("PL:%d TR:%d ♥%d 💿%d hist:%d dur:%d:%02d", totalPlaylists, totalTracks, likedCount, cachedCount, historyCount, int(totalDur.Hours()), int(totalDur.Minutes())%60)
+	return m.ShowToast(msg)
+}
+
+func (m *Model) moveTrack(direction int) tea.Cmd {
+	selectedPlaylist := m.playlists.SelectedItem()
+	if len(selectedPlaylist.Tracks) == 0 || selectedPlaylist.Kind == playlist.MYWAVE || selectedPlaylist.Kind == playlist.STATION || selectedPlaylist.Kind == playlist.HISTORY || selectedPlaylist.Kind == playlist.NONE {
+		return nil
+	}
+
+	idx := m.tracklist.Index()
+	newIdx := idx + direction
+	if newIdx < 0 || newIdx >= len(selectedPlaylist.Tracks) {
+		return nil
+	}
+
+	selectedPlaylist.Tracks[idx], selectedPlaylist.Tracks[newIdx] = selectedPlaylist.Tracks[newIdx], selectedPlaylist.Tracks[idx]
+
+	if selectedPlaylist.CurrentTrack == idx {
+		selectedPlaylist.CurrentTrack = newIdx
+	} else if selectedPlaylist.CurrentTrack == newIdx {
+		selectedPlaylist.CurrentTrack = idx
+	}
+
+	selectedPlaylist.SelectedTrack = newIdx
+
+	cmd := m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+
+	m.displayPlaylist(selectedPlaylist)
+	m.tracklist.Select(newIdx)
+
+	if m.currentPlaylistIndex >= 0 {
+		currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
+		if selectedPlaylist.IsSame(currentPlaylist) && m.tracker.IsPlaying() {
+			m.indicateCurrentTrackPlaying(true)
+		}
+	}
+
+	return cmd
 }

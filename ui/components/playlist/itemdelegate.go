@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/ui/style"
 )
 
 type ItemDelegate struct {
@@ -49,31 +49,42 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	name := item.Name
 	nameLen := lipgloss.Width(name)
-	maxLen := m.Width() - 5
-	if nameLen > maxLen {
-		name = lipgloss.NewStyle().MaxWidth(maxLen-1).Render(name) + "…"
+
+	var trackCount string
+	if len(item.Tracks) > 0 {
+		trackCount = fmt.Sprintf(" (%d)", len(item.Tracks))
+	} else if len(item.Albums) > 0 {
+		trackCount = fmt.Sprintf(" (%d)", len(item.Albums))
 	}
+
+	maxLen := m.Width() - 5
+	availableLen := maxLen - lipgloss.Width(trackCount)
+	if nameLen > availableLen {
+		name = lipgloss.NewStyle().MaxWidth(availableLen-1).Render(name) + "…"
+	}
+
+	nameWithCount := name + style.TrackVersionStyle.Render(trackCount)
 
 	if !item.Active {
 		if item.Subitem {
-			fmt.Fprint(w, style.SideBoxSubItemStyle.Render(name))
+			fmt.Fprint(w, style.SideBoxSubItemStyle.Render(nameWithCount))
 		} else {
-			fmt.Fprint(w, style.SideBoxInactiveItemStyle.Render(name))
+			fmt.Fprint(w, style.SideBoxInactiveItemStyle.Render(nameWithCount))
 		}
 		return
 	}
 
 	if item.Subitem {
 		if index == m.Index() {
-			fmt.Fprint(w, style.SideBoxSelSubItemStyle.Render(name))
+			fmt.Fprint(w, style.SideBoxSelSubItemStyle.Render(nameWithCount))
 		} else {
-			fmt.Fprint(w, style.SideBoxSubItemStyle.Render(name))
+			fmt.Fprint(w, style.SideBoxSubItemStyle.Render(nameWithCount))
 		}
 	} else {
 		if index == m.Index() {
-			fmt.Fprint(w, style.SideBoxSelItemStyle.Render(name))
+			fmt.Fprint(w, style.SideBoxSelItemStyle.Render(nameWithCount))
 		} else {
-			fmt.Fprint(w, style.SideBoxItemStyle.Render(name))
+			fmt.Fprint(w, style.SideBoxItemStyle.Render(nameWithCount))
 		}
 	}
 }

@@ -164,6 +164,7 @@ type Track struct {
 	StorageDir       string `json:"storageDir"`
 	DurationMs       int    `json:"durationMs"`
 	RememberPosition bool   `json:"rememberPosition"`
+	PlayCount        int    `json:"playCount"`
 }
 
 type Playlist struct {

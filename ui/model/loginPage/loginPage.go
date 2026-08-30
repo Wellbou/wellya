@@ -1,8 +1,8 @@
 package loginpage
 
 import (
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/ui/style"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -20,7 +20,6 @@ type Model struct {
 	helpMap *helpKeyMap
 }
 
-// loginpage.Model constructor.
 func New() *Model {
 	m := &Model{
 		input:   textinput.New(),
@@ -38,10 +37,6 @@ func New() *Model {
 	return m
 }
 
-//
-// model.Model interface implementation
-//
-
 func (m *Model) Run() error {
 	_, err := m.program.Run()
 	if err != nil {
@@ -56,10 +51,6 @@ func (m *Model) Run() error {
 func (m *Model) Send(msg tea.Msg) {
 	go m.program.Send(msg)
 }
-
-//
-// tea.Model interface implementation
-//
 
 func (m *Model) Init() tea.Cmd {
 	return textinput.Blink
@@ -114,10 +105,6 @@ func (m *Model) View() string {
 
 	return dialog
 }
-
-//
-// private methods
-//
 
 func (m *Model) resize(width, height int) {
 	m.width, m.height = width, height

@@ -68,8 +68,13 @@ func (h *BufferedStream) Read(dest []byte) (n int, err error) {
 	destLen := int64(len(dest))
 
 	if h.readIndex >= readBufLen {
-		newFrame := make([]byte, (h.readIndex-readBufLen)+destLen)
+		need := (h.readIndex - readBufLen) + destLen
+		newFrame := make([]byte, need)
+		h.mux.Unlock()
+
 		n, err = io.ReadFull(h.source, newFrame)
+
+		h.mux.Lock()
 		h.readBuffer = append(h.readBuffer, newFrame[:n]...)
 		if h.readIndex < int64(len(h.readBuffer)) {
 			copy(dest, h.readBuffer[h.readIndex:])
@@ -88,8 +93,12 @@ func (h *BufferedStream) Read(dest []byte) (n int, err error) {
 
 		if destLen-int64(len(bufferedPart)) > 0 {
 			unbufferedPart := make([]byte, destLen-int64(len(bufferedPart)))
+			h.mux.Unlock()
+
 			unbufferedLen, err = h.source.Read(unbufferedPart)
 			unbufferedPart = unbufferedPart[:unbufferedLen]
+
+			h.mux.Lock()
 			copy(dest, append(bufferedPart, unbufferedPart...))
 			n = len(bufferedPart) + unbufferedLen
 			h.readBuffer = append(h.readBuffer, unbufferedPart...)
@@ -151,6 +160,8 @@ func (h *BufferedStream) IsDone() bool {
 	if h == nil {
 		return false
 	}
+	h.mux.Lock()
+	defer h.mux.Unlock()
 	return h.done
 }
 
@@ -158,6 +169,8 @@ func (h *BufferedStream) IsBuffered() bool {
 	if h == nil {
 		return false
 	}
+	h.mux.Lock()
+	defer h.mux.Unlock()
 	return h.buffered
 }
 
@@ -165,6 +178,8 @@ func (h *BufferedStream) Progress() float64 {
 	if h == nil {
 		return 0
 	}
+	h.mux.Lock()
+	defer h.mux.Unlock()
 	return float64(h.readIndex) / float64(h.totalSize)
 }
 
@@ -172,6 +187,8 @@ func (h *BufferedStream) BufferingProgress() float64 {
 	if h == nil {
 		return 0
 	}
+	h.mux.Lock()
+	defer h.mux.Unlock()
 	return float64(len(h.readBuffer)) / float64(h.totalSize)
 }
 
@@ -193,9 +210,12 @@ func (h *BufferedStream) BufferAll() {
 
 	h.readBuffer = append(h.readBuffer, newFrame...)
 	h.source.Close()
+	h.done = true
 }
 
 func (h *BufferedStream) WriteTo(dest io.Writer) (int64, error) {
+	h.mux.Lock()
+	defer h.mux.Unlock()
 	n, err := dest.Write(h.readBuffer)
 	return int64(n), err
 }
@@ -234,9 +254,13 @@ func (h *BufferedStream) bufferFrames(size int64) {
 				h.mux.Unlock()
 				return
 			}
+		} else {
+			h.lastError = err
+			h.stopBuffering()
+			h.mux.Unlock()
+			return
 		}
 
-		h.lastError = err
 		h.mux.Unlock()
 
 		// await next Read call or timer expiration

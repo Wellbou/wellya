@@ -2,7 +2,7 @@ package playlist
 
 import (
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/dece2183/yamusic-tui/config"
+	"github.com/wellbou/wellya/config"
 )
 
 type helpKeyMap struct {

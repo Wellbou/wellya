@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	mp3 "github.com/dece2183/go-stream-mp3"
-	"github.com/dece2183/yamusic-tui/log"
-	"github.com/dece2183/yamusic-tui/stream"
+	"github.com/wellbou/wellya/log"
+	"github.com/wellbou/wellya/stream"
 )
 
 const (
@@ -62,8 +62,7 @@ func (w *readWrapper) Read(dest []byte) (n int, err error) {
 			go w.program.Send(STOP)
 			return
 		}
-		// bypass mp3 decoding error after rewinding
-		log.Print(log.LVL_WARNIGN, "mp3 decoding error: %s", err)
+		log.Print(log.LVL_WARNING, "mp3 decoding error: %s", err)
 		err = nil
 	}
 

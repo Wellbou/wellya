@@ -10,7 +10,32 @@ import (
 
 var Current Config
 
+const OldDirName = "yamusic-tui"
+
+func migrateOldConfig() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	oldDir := filepath.Join(home, ".config", OldDirName)
+	newDir := filepath.Join(home, ".config", DirName)
+	if _, err := os.Stat(newDir); err == nil {
+		return
+	}
+	if _, err := os.Stat(oldDir); err != nil {
+		return
+	}
+	_ = os.MkdirAll(newDir, 0755)
+	if data, err := os.ReadFile(filepath.Join(oldDir, "config.yaml")); err == nil {
+		_ = os.WriteFile(filepath.Join(newDir, "config.yaml"), data, 0644)
+	}
+	if data, err := os.ReadFile(filepath.Join(oldDir, "token")); err == nil {
+		_ = os.WriteFile(filepath.Join(newDir, "token"), data, 0644)
+	}
+}
+
 func InitialLoad() error {
+	migrateOldConfig()
 	var err error
 
 	Current, err = load()

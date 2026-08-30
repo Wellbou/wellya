@@ -1,9 +1,9 @@
 package playlist
 
 import (
-	"github.com/dece2183/yamusic-tui/config"
-	"github.com/dece2183/yamusic-tui/ui/model"
-	"github.com/dece2183/yamusic-tui/ui/style"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/ui/model"
+	"github.com/wellbou/wellya/ui/style"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -26,9 +26,12 @@ type PlaylistType = uint64
 const (
 	NONE PlaylistType = iota
 	MYWAVE
+	STATION
 	LIKES
 	LOCAL
 	ALBUMS
+	HISTORY
+	ARTIST
 	// Should be the last to detect downloaded user playlists
 	USER
 )

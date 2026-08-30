@@ -4,20 +4,22 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"sync"
 
 	_ "image/jpeg"
 	_ "image/png"
 
 	"github.com/bogem/id3v2/v2"
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/cache"
-	"github.com/dece2183/yamusic-tui/log"
-	"github.com/dece2183/yamusic-tui/stream"
-	"github.com/dece2183/yamusic-tui/ui/components/playlist"
-	"github.com/dece2183/yamusic-tui/ui/components/tracker"
-	"github.com/dece2183/yamusic-tui/ui/components/tracklist"
-	"github.com/dece2183/yamusic-tui/ui/helpers"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/cache"
+	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/log"
+	"github.com/wellbou/wellya/stream"
+	"github.com/wellbou/wellya/ui/components/playlist"
+	"github.com/wellbou/wellya/ui/components/tracker"
+	"github.com/wellbou/wellya/ui/components/tracklist"
+	"github.com/wellbou/wellya/ui/helpers"
 )
 
 const (
@@ -56,6 +58,9 @@ func (m *Model) rotateTracks(currentPlaylist *playlist.Item) {
 	}
 
 	currentPlaylist.SessionBatch = suggestedTracks.BatchId
+	if len(suggestedTracks.Sequence) == 0 {
+		return
+	}
 	currentPlaylist.Tracks = append(currentPlaylist.Tracks, suggestedTracks.Sequence[0].Track)
 
 	if m.playlists.SelectedItem().IsSame(currentPlaylist) {
@@ -68,6 +73,33 @@ func (m *Model) rotateTracks(currentPlaylist *playlist.Item) {
 			Artists:      helpers.ArtistList(suggestedTracks.Sequence[0].Track.Artists),
 			IsSuggestion: true,
 		})
+	}
+}
+
+func (m *Model) loadStationTracks(pl *playlist.Item) {
+	if m.client == nil {
+		return
+	}
+
+	session, err := m.client.RotorNewSession(pl.StationId)
+	if err != nil {
+		log.Print(log.LVL_ERROR, "failed to init station session [%s]: %s", pl.Name, err)
+		m.tracker.ShowError("station session")
+		return
+	}
+
+	pl.Rotor = true
+	pl.SessionId = session.RadioSessionId
+	pl.SessionBatch = session.BatchId
+	if len(session.AcceptedSeeds) > 0 {
+		pl.StationId = session.AcceptedSeeds[0]
+	}
+
+	if len(session.Sequence) > 0 {
+		pl.Tracks = make([]api.Track, 0, len(session.Sequence))
+		for _, seq := range session.Sequence {
+			pl.Tracks = append(pl.Tracks, seq.Track)
+		}
 	}
 }
 
@@ -131,9 +163,24 @@ func (m *Model) nextTrack() {
 	m.indicateCurrentTrackPlaying(false)
 
 	if currentPlaylist.CurrentTrack+1 >= len(currentPlaylist.Tracks) {
-		currentPlaylist.CurrentTrack = 0
 		m.playlists.SetItem(m.currentPlaylistIndex, currentPlaylist)
-		m.Send(tracker.STOP)
+		repeatMode := m.tracker.RepeatMode()
+		switch repeatMode {
+		case 1: // repeat playlist
+			currentPlaylist.CurrentTrack = 0
+			m.playlists.SetItem(m.currentPlaylistIndex, currentPlaylist)
+			track := &currentPlaylist.Tracks[0]
+			if track.Available {
+				m.playSelectedPlaylist(0)
+			} else {
+				m.Send(tracker.STOP)
+			}
+		case 2: // repeat track
+			currentPlaylist.CurrentTrack = len(currentPlaylist.Tracks) - 1
+			m.playSelectedPlaylist(currentPlaylist.CurrentTrack)
+		default: // no repeat
+			m.Send(tracker.STOP)
+		}
 		return
 	}
 
@@ -166,6 +213,8 @@ func (m *Model) nextTrack() {
 
 func (m *Model) playTrack(track *api.Track) {
 	m.tracker.Stop()
+	m.playGeneration++
+	generation := m.playGeneration
 
 	var (
 		wg sync.WaitGroup
@@ -185,17 +234,31 @@ func (m *Model) playTrack(track *api.Track) {
 	go func() {
 		defer wg.Done()
 		coverPath := m.coverFilePath(track)
-		coverFile, ferr := os.OpenFile(coverPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
+		stat, serr := os.Stat(coverPath)
+		if serr == nil && stat.Size() > 0 {
+			coverFile, ferr := os.Open(coverPath)
+			if ferr != nil {
+				log.Print(log.LVL_WARNING, "unable to open cover file [%s]: %s", coverPath, ferr)
+				return
+			}
+			defer coverFile.Close()
+			s, _ := coverFile.Stat()
+			buf := make([]byte, s.Size())
+			coverFile.Seek(0, io.SeekStart)
+			coverFile.Read(buf)
+			coverBytes = buf
+			return
+		}
+		coverFile, ferr := os.OpenFile(coverPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
 		if ferr != nil {
-			log.Print(log.LVL_WARNIGN, "unable to open cover file [%s]: %s", coverPath, ferr)
+			log.Print(log.LVL_WARNING, "unable to open cover file [%s]: %s", coverPath, ferr)
 			return
 		}
 		defer coverFile.Close()
-		stat, serr := coverFile.Stat()
 		if serr != nil || stat.Size() == 0 {
 			cType, derr := api.DownloadTrackCover(coverFile, track, 200)
 			if derr != nil {
-				log.Print(log.LVL_WARNIGN, "unable to download track [%s] cover: %s", track.Id, derr)
+				log.Print(log.LVL_WARNING, "unable to download track [%s] cover: %s", track.Id, derr)
 				return
 			}
 			coverType = cType
@@ -214,7 +277,7 @@ func (m *Model) playTrack(track *api.Track) {
 			defer wg.Done()
 			lyr, lerr := m.client.TrackLyricsRequest(track.Id)
 			if lerr != nil {
-				log.Print(log.LVL_WARNIGN, "failed to obtain track [%s] lyrics: %s", track.Id, lerr)
+				log.Print(log.LVL_WARNING, "failed to obtain track [%s] lyrics: %s", track.Id, lerr)
 				m.tracker.ShowError("track lyrics")
 				return
 			}
@@ -240,14 +303,8 @@ func (m *Model) playTrack(track *api.Track) {
 				lastErr = ierr
 				continue
 			}
-			var bestBitrate int
-			var bestTrackInfo api.TrackDownloadInfo
-			for _, ti := range trackInfos {
-				if ti.BbitrateInKbps > bestBitrate {
-					bestBitrate = ti.BbitrateInKbps
-					bestTrackInfo = ti
-				}
-			}
+			bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
+			m.tracker.SetBitrate(bestTrackInfo.BbitrateInKbps)
 			tr2, ts2, derr := m.client.DownloadTrack(bestTrackInfo)
 			if derr != nil {
 				log.Print(log.LVL_ERROR, "failed to download track [%s]: %s", track.Id, derr)
@@ -264,6 +321,13 @@ func (m *Model) playTrack(track *api.Track) {
 
 	wg.Wait()
 
+	if generation != m.playGeneration {
+		if trackReader != nil {
+			trackReader.Close()
+		}
+		return
+	}
+
 	if downloadErr != nil && trackReader == nil {
 		m.tracker.ShowError("track download")
 		return
@@ -272,35 +336,12 @@ func (m *Model) playTrack(track *api.Track) {
 	trackBuffer := stream.NewBufferedStream(trackReader, trackSize)
 	metadataFile, err := os.OpenFile(m.metadataFilePath(), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
 	if err == nil {
-		tag := id3v2.NewEmptyTag()
-		if trackFromCache {
-			tag.Reset(trackBuffer, id3v2.Options{Parse: true})
-		} else {
-			tag.SetDefaultEncoding(id3v2.EncodingUTF8)
-			tag.SetTitle(track.Title)
-			if len(track.Albums) != 0 {
-				tag.SetAlbum(track.Albums[0].Title)
-				tag.SetGenre(track.Albums[0].Genre)
-				tag.SetYear(fmt.Sprint(track.Albums[0].Year))
-			}
-			tag.SetArtist(helpers.ArtistList(track.Artists))
-			tag.AddAttachedPicture(id3v2.PictureFrame{
-				MimeType:    coverType,
-				PictureType: id3v2.PTFrontCover,
-				Encoding:    id3v2.EncodingUTF16BE,
-				Picture:     coverBytes,
-			})
-			tag.AddFrame("TLEN", id3v2.TextFrame{
-				Encoding: id3v2.EncodingUTF8,
-				Text:     fmt.Sprint(track.DurationMs),
-			})
-		}
-		tag.WriteTo(metadataFile)
+		writeTrackID3Tag(metadataFile, track, coverBytes, coverType)
 		io.CopyN(metadataFile, trackBuffer, 32*1024)
 		trackBuffer.Seek(0, io.SeekStart)
 		metadataFile.Close()
 	} else {
-		log.Print(log.LVL_WARNIGN, "failed to create metadata file: %s", err)
+		log.Print(log.LVL_WARNING, "failed to create metadata file: %s", err)
 	}
 
 	if m.currentPlaylistIndex >= 0 {
@@ -324,8 +365,21 @@ func (m *Model) playTrack(track *api.Track) {
 func (m *Model) playSelectedPlaylist(trackIndex int) {
 	selectedPlaylist := m.playlists.SelectedItem()
 	if len(selectedPlaylist.Tracks) == 0 {
-		m.Send(tracker.STOP)
-		return
+		if selectedPlaylist.Kind == playlist.STATION {
+			m.loadStationTracks(selectedPlaylist)
+			if len(selectedPlaylist.Tracks) == 0 {
+				m.tracker.ShowError("station tracks")
+				m.Send(tracker.STOP)
+				return
+			}
+			selectedPlaylist.SelectedTrack = 0
+			trackIndex = 0
+			m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+			m.displayPlaylist(selectedPlaylist)
+		} else {
+			m.Send(tracker.STOP)
+			return
+		}
 	}
 
 	trackToPlay := &selectedPlaylist.Tracks[selectedPlaylist.SelectedTrack]
@@ -370,4 +424,74 @@ func (m *Model) playSelectedPlaylist(trackIndex int) {
 	m.currentPlaylistIndex = m.playlists.Index()
 	m.playlists.SetItem(m.currentPlaylistIndex, selectedPlaylist)
 	m.playTrack(trackToPlay)
+
+	trackCopy := *trackToPlay
+	for i, t := range m.historyTracks {
+		if t.Id == trackCopy.Id {
+			m.historyTracks = append(m.historyTracks[:i], m.historyTracks[i+1:]...)
+			break
+		}
+	}
+	m.historyTracks = append([]api.Track{trackCopy}, m.historyTracks...)
+	if len(m.historyTracks) > 100 {
+		m.historyTracks = m.historyTracks[:100]
+	}
+}
+
+func selectBestDownloadInfo(infos []api.TrackDownloadInfo, quality config.AudioQuality) api.TrackDownloadInfo {
+	if len(infos) == 0 {
+		return api.TrackDownloadInfo{}
+	}
+
+	sorted := make([]api.TrackDownloadInfo, len(infos))
+	copy(sorted, infos)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].BbitrateInKbps > sorted[j].BbitrateInKbps
+	})
+
+	switch quality {
+	case config.QUALITY_HIGH:
+		for _, info := range sorted {
+			if info.BbitrateInKbps <= 320 && info.BbitrateInKbps >= 256 {
+				return info
+			}
+		}
+		return sorted[0]
+	case config.QUALITY_MEDIUM:
+		for _, info := range sorted {
+			if info.BbitrateInKbps <= 256 && info.BbitrateInKbps >= 192 {
+				return info
+			}
+		}
+		return sorted[len(sorted)-1]
+	case config.QUALITY_LOW:
+		return sorted[len(sorted)-1]
+	default:
+		return sorted[0]
+	}
+}
+
+func writeTrackID3Tag(file *os.File, track *api.Track, coverBytes []byte, coverType string) {
+	tag := id3v2.NewEmptyTag()
+	tag.SetDefaultEncoding(id3v2.EncodingUTF8)
+	tag.SetTitle(track.Title)
+	if len(track.Albums) != 0 {
+		tag.SetAlbum(track.Albums[0].Title)
+		tag.SetGenre(track.Albums[0].Genre)
+		tag.SetYear(fmt.Sprint(track.Albums[0].Year))
+	}
+	tag.SetArtist(helpers.ArtistList(track.Artists))
+	if len(coverBytes) > 0 {
+		tag.AddAttachedPicture(id3v2.PictureFrame{
+			MimeType:    coverType,
+			PictureType: id3v2.PTFrontCover,
+			Encoding:    id3v2.EncodingUTF16BE,
+			Picture:     coverBytes,
+		})
+	}
+	tag.AddFrame("TLEN", id3v2.TextFrame{
+		Encoding: id3v2.EncodingUTF8,
+		Text:     fmt.Sprint(track.DurationMs),
+	})
+	tag.WriteTo(file)
 }

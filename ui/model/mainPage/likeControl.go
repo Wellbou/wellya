@@ -2,9 +2,9 @@ package mainpage
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dece2183/yamusic-tui/api"
-	"github.com/dece2183/yamusic-tui/log"
-	"github.com/dece2183/yamusic-tui/ui/components/playlist"
+	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/log"
+	"github.com/wellbou/wellya/ui/components/playlist"
 )
 
 func (m *Model) likePlayingTrack() tea.Cmd {
