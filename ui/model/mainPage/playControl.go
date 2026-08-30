@@ -275,7 +275,7 @@ func (m *Model) playTrack(track *api.Track) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			lyr, lerr := m.client.TrackLyricsRequest(track.Id)
+			lyr, lerr := m.client.TrackLyricsRequest(string(track.Id))
 			if lerr != nil {
 				log.Print(log.LVL_WARNING, "failed to obtain track [%s] lyrics: %s", track.Id, lerr)
 				m.tracker.ShowError("track lyrics")
@@ -288,7 +288,7 @@ func (m *Model) playTrack(track *api.Track) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tr, ts, cerr := cache.Read(track.Id)
+		tr, ts, cerr := cache.Read(string(track.Id))
 		if cerr == nil {
 			trackReader = tr
 			trackSize = ts
@@ -297,7 +297,7 @@ func (m *Model) playTrack(track *api.Track) {
 		}
 		var lastErr error
 		for i := 0; i < _TRACK_DOWNLOAD_TRIES; i++ {
-			trackInfos, ierr := m.client.TrackDownloadInfo(track.Id)
+			trackInfos, ierr := m.client.TrackDownloadInfo(string(track.Id))
 			if ierr != nil {
 				log.Print(log.LVL_ERROR, "failed to obtain track [%s] info: %s", track.Id, ierr)
 				lastErr = ierr
@@ -387,7 +387,7 @@ func (m *Model) playSelectedPlaylist(trackIndex int) {
 
 	if m.currentPlaylistIndex >= 0 {
 		currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
-		if currentPlaylist.IsSame(selectedPlaylist) && selectedPlaylist.CurrentTrack == trackIndex && m.tracker.CurrentTrack().Id == trackToPlay.Id {
+		if currentPlaylist.IsSame(selectedPlaylist) && selectedPlaylist.CurrentTrack == trackIndex && string(m.tracker.CurrentTrack().Id) == string(trackToPlay.Id) {
 			if m.tracker.IsPlaying() {
 				m.tracker.Pause()
 				return
@@ -429,7 +429,7 @@ func (m *Model) playSelectedPlaylist(trackIndex int) {
 
 	trackCopy := *trackToPlay
 	for i, t := range m.historyTracks {
-		if t.Id == trackCopy.Id {
+		if string(t.Id) == string(trackCopy.Id) {
 			m.historyTracks = append(m.historyTracks[:i], m.historyTracks[i+1:]...)
 			break
 		}

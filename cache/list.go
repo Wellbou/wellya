@@ -47,7 +47,7 @@ func ListTracks() ([]api.Track, error) {
 
 		if durationMs > 0 {
 			tracks = append(tracks, api.Track{
-				Id:         name[:len(name)-len(ext)],
+				Id:         api.FlexString(name[:len(name)-len(ext)]),
 				Title:      tag.Title(),
 				Available:  true,
 				FileSize:   int(stat.Size()),

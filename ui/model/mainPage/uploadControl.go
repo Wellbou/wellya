@@ -178,8 +178,8 @@ func (m *Model) importLocalFile(filePath string) error {
 	defer cacheFile.Close()
 
 	track := &api.Track{
-		Id:        id,
-		RealId:    id,
+		Id: api.FlexString(id),
+		RealId: api.FlexString(id),
 		Title:     title,
 		Available: true,
 		Artists: []api.Artist{

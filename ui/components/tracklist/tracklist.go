@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -44,6 +45,7 @@ const (
 	EXPORT
 	UPLOAD
 	STATS
+	PLAY_NEXT
 )
 
 type Model struct {
@@ -51,6 +53,8 @@ type Model struct {
 	list          list.Model
 	help          help.Model
 	helpMap       *helpKeyMap
+	filterInput   textinput.Model
+	allItems      []Item
 	width, height int
 	Hidden        bool
 	Title         string
@@ -79,6 +83,11 @@ func New(p *tea.Program, likesMap *map[string]bool, cacheMap *map[string]bool) *
 	m.list.Paginator.KeyMap.PrevPage.SetEnabled(false)
 	m.list.SetShowHelp(false)
 
+	m.filterInput = textinput.New()
+	m.filterInput.Placeholder = "Filter playlist... (esc to clear)"
+	m.filterInput.CharLimit = 64
+	m.filterInput.Width = 32
+
 	m.help.Ellipsis = "…"
 	m.help.Styles.FullDesc = m.help.Styles.FullDesc.PaddingRight(1)
 
@@ -103,7 +112,12 @@ func (m *Model) View() string {
 
 	m.helpMap.Shufflable = m.Shufflable
 	helpView := m.help.View(m.helpMap)
-	m.list.SetHeight(m.height - lipgloss.Height(helpView) - 4)
+	filterView := m.filterInput.View()
+	filterHeight := 1
+	if lipgloss.Width(filterView) > 0 {
+		filterHeight = 2
+	}
+	m.list.SetHeight(m.height - lipgloss.Height(helpView) - filterHeight - 4)
 
 	listView := m.list.View()
 	if lipgloss.Height(listView) <= m.list.Height() {
@@ -111,7 +125,36 @@ func (m *Model) View() string {
 		listView = listView[:lastLine] + "\n" + listView[lastLine:]
 	}
 
-	return style.TrackBoxStyle.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, listView, "", helpView))
+	filterBox := style.TrackBoxStyle.Width(m.width - 4).Render(filterView)
+	return style.TrackBoxStyle.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, filterBox, listView, "", helpView))
+}
+
+func (m *Model) FilterValue() string {
+	return m.filterInput.Value()
+}
+
+func (m *Model) SetFilterValue(v string) {
+	m.filterInput.SetValue(v)
+	m.applyFilter()
+}
+
+func (m *Model) applyFilter() {
+	val := strings.ToLower(strings.TrimSpace(m.filterInput.Value()))
+	if val == "" {
+		newItems := make([]list.Item, len(m.allItems))
+		for i := range m.allItems {
+			newItems[i] = m.allItems[i]
+		}
+		m.list.SetItems(newItems)
+		return
+	}
+	filtered := []list.Item{}
+	for _, it := range m.allItems {
+		if strings.Contains(strings.ToLower(it.FilterValue()), val) {
+			filtered = append(filtered, it)
+		}
+	}
+	m.list.SetItems(filtered)
 }
 
 func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
@@ -125,14 +168,33 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		controls := config.Current.Controls
 		keypress := msg.String()
 
-		if controls.TracksFilter.Contains(keypress) {
-			if m.list.FilteringEnabled() {
-				m.list.SetFilteringEnabled(false)
-				m.list.ResetFilter()
-			} else {
-				m.list.SetFilteringEnabled(true)
+		if m.filterInput.Focused() {
+			switch keypress {
+			case "esc":
+				m.filterInput.SetValue("")
+				m.filterInput.Blur()
+				m.applyFilter()
+				return m, nil
+			case "enter":
+				m.filterInput.Blur()
+				return m, nil
 			}
-			return m, nil
+			var c tea.Cmd
+			m.filterInput, c = m.filterInput.Update(msg)
+			cmds = append(cmds, c)
+			m.applyFilter()
+			return m, tea.Batch(cmds...)
+		}
+
+		if controls.TracksFilter.Contains(keypress) {
+			m.filterInput.Focus()
+			return m, textinput.Blink
+		}
+		if len(keypress) == 1 && keypress[0] >= 32 && keypress[0] <= 126 && !controls.ShowAllKeys.Contains(keypress) {
+			m.filterInput.Focus()
+			m.filterInput.SetValue(m.filterInput.Value() + keypress)
+			m.applyFilter()
+			return m, textinput.Blink
 		}
 
 		m.list, cmd = m.list.Update(msg)
@@ -212,6 +274,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			cmds = append(cmds, model.Cmd(UPLOAD))
 		case controls.TracksStats.Contains(keypress):
 			cmds = append(cmds, model.Cmd(STATS))
+		case controls.TracksPlayNext.Contains(keypress):
+			cmds = append(cmds, model.Cmd(PLAY_NEXT))
 		}
 	}
 
@@ -228,11 +292,10 @@ func (m *Model) Items() []Item {
 }
 
 func (m *Model) SetItems(items []Item) tea.Cmd {
-	newItems := make([]list.Item, len(items))
-	for i := 0; i < len(items); i++ {
-		newItems[i] = items[i]
-	}
-	return m.list.SetItems(newItems)
+	m.allItems = make([]Item, len(items))
+	copy(m.allItems, items)
+	m.applyFilter()
+	return nil
 }
 
 func (m *Model) InsertItem(index int, item Item) tea.Cmd {
@@ -271,6 +334,7 @@ func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.help.Width = m.width - 4
 	m.list.SetWidth(m.width - 6)
+	m.filterInput.Width = m.width - 8
 	m.SetHeight(h)
 }
 

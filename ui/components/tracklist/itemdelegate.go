@@ -105,14 +105,14 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		))
 
 		var trackLike string
-		if (*d.likesMap)[item.Track.Id] {
+		if (*d.likesMap)[string(item.Track.Id)] {
 			trackLike = style.IconLiked
 		} else {
 			trackLike = style.IconNotLiked
 		}
 
 		var trackCache string
-		if (*d.cacheMap)[item.Track.Id] {
+		if (*d.cacheMap)[string(item.Track.Id)] {
 			trackCache = style.IconCached
 		}
 

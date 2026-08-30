@@ -82,7 +82,7 @@ func (m *Model) initialLoad() {
 		for _, item := range likedTracksMenuBlock.items {
 			m.playlists.InsertItem(-1, item)
 			for _, tr := range item.Tracks {
-				m.likedTracksMap[tr.Id] = true
+				m.likedTracksMap[string(tr.Id)] = true
 			}
 		}
 	} else {
@@ -136,7 +136,7 @@ func (m *Model) initialLoad() {
 		for _, item := range localTracksMenuBlock.items {
 			m.playlists.InsertItem(-1, item)
 			for _, tr := range item.Tracks {
-				m.cachedTracksMap[tr.Id] = true
+				m.cachedTracksMap[string(tr.Id)] = true
 			}
 		}
 	} else {
@@ -209,7 +209,7 @@ func (m *Model) loadLikedTracks(wg *sync.WaitGroup, block *menuBlock) {
 
 	ids := make([]string, len(likes))
 	for i, tr := range likes {
-		ids[i] = tr.Id
+		ids[i] = string(tr.Id)
 	}
 
 	tracks, err := m.client.Tracks(ids)

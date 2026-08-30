@@ -154,6 +154,7 @@ type Controls struct {
 	TracksExport             *Key `yaml:"tracks-export"`
 	TracksUpload             *Key `yaml:"tracks-upload"`
 	TracksStats              *Key `yaml:"tracks-stats"`
+	TracksPlayNext           *Key `yaml:"tracks-play-next"`
 	// Player control
 	PlayerPause          *Key `yaml:"player-pause"`
 	PlayerNext           *Key `yaml:"player-next"`
@@ -252,6 +253,7 @@ var defaultConfig = Config{
 		TracksExport:             NewKey("E"),
 		TracksUpload:             NewKey("U"),
 		TracksStats:              NewKey("ctrl+g"),
+		TracksPlayNext:           NewKey("n"),
 		PlayerPause:              NewKey("space"),
 		PlayerNext:               NewKey("right"),
 		PlayerPrevious:           NewKey("left"),

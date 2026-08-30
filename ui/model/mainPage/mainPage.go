@@ -429,7 +429,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.tracker.ToggleMute()
 		case tracker.BUFFERING_COMPLETE:
 			cacheMode := config.Current.CacheTracks
-			if cacheMode == config.CACHE_ALL || (cacheMode == config.CACHE_LIKED_ONLY && m.likedTracksMap[m.tracker.CurrentTrack().Id]) {
+			if cacheMode == config.CACHE_ALL || (cacheMode == config.CACHE_LIKED_ONLY && m.likedTracksMap[string(m.tracker.CurrentTrack().Id)]) {
 				cmd = m.cacheCurrentTrack()
 				cmds = append(cmds, cmd)
 			}
@@ -667,7 +667,7 @@ func (m *Model) mediaHandle() {
 			}
 
 			md := handler.TrackMetadata{
-				TrackId:      track.Id,
+				TrackId: string(track.Id),
 				Length:       time.Duration(track.DurationMs) * time.Millisecond,
 				CoverUrl:     m.coverFilePath(track),
 				AlbumName:    albumName,
@@ -691,7 +691,7 @@ func (m *Model) coverFilePath(track *api.Track) string {
 	if os.MkdirAll(tempDir, 0755) != nil {
 		return ""
 	}
-	return filepath.Join(tempDir, track.Id+".jpg")
+	return filepath.Join(tempDir, string(track.Id)+".jpg")
 }
 
 func (m *Model) metadataFilePath() string {
@@ -740,12 +740,12 @@ func (m *Model) trackInfoView() string {
 	lines = append(lines, style.AccentTextStyle.Render("Duration: ")+valueStyle.Render(fmt.Sprintf("%d:%02d", int(dur.Minutes()), int(dur.Seconds())%60)))
 
 	liked := "No"
-	if m.likedTracksMap[track.Id] {
+	if m.likedTracksMap[string(track.Id)] {
 		liked = "Yes"
 	}
 	lines = append(lines, style.AccentTextStyle.Render("Liked: ")+valueStyle.Render(liked))
 	cached := "No"
-	if m.cachedTracksMap[track.Id] {
+	if m.cachedTracksMap[string(track.Id)] {
 		cached = "Yes"
 	}
 	lines = append(lines, style.AccentTextStyle.Render("Cached: ")+valueStyle.Render(cached))

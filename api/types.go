@@ -235,8 +235,8 @@ type Album struct {
 }
 
 type Track struct {
-	Id              string `json:"id"`
-	RealId          string `json:"realId"`
+	Id              FlexString `json:"id"`
+	RealId          FlexString `json:"realId"`
 	Title           string `json:"title"`
 	Version         string `json:"version"`
 	Available       bool   `json:"available"`
@@ -425,9 +425,9 @@ type StationTracks struct {
 }
 
 type LikeTrackInfo struct {
-	Id        string `json:"id"`
-	AlbumId   string `json:"albumId"`
-	Timestamp string `json:"timestamp"`
+	Id        FlexString `json:"id"`
+	AlbumId   FlexString `json:"albumId"`
+	Timestamp string     `json:"timestamp"`
 }
 
 type LikesDesc struct {

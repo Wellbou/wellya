@@ -217,7 +217,7 @@ func (m *Model) View() string {
 		))
 
 		var trackLike string
-		if (*m.likesMap)[m.track.Id] {
+		if (*m.likesMap)[string(m.track.Id)] {
 			trackLike = style.IconLiked + " "
 		} else {
 			trackLike = style.IconNotLiked + " "

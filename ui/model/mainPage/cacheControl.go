@@ -21,7 +21,7 @@ import (
 
 func (m *Model) cacheCurrentTrack() tea.Cmd {
 	currentTrack := m.tracker.CurrentTrack()
-	if m.tracker.IsStoped() || m.cachedTracksMap[currentTrack.Id] {
+	if m.tracker.IsStoped() || m.cachedTracksMap[string(currentTrack.Id)] {
 		return nil
 	}
 
@@ -34,7 +34,7 @@ func (m *Model) cacheCurrentTrack() tea.Cmd {
 
 	defer metadataFile.Close()
 
-	cacheFile, err := cache.Write(currentTrack.Id)
+	cacheFile, err := cache.Write(string(currentTrack.Id))
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to write cache file: %s", err)
 		m.tracker.ShowError("cache write")
@@ -51,7 +51,7 @@ func (m *Model) cacheCurrentTrack() tea.Cmd {
 	trackBuffer.Seek(0, 0)
 	trackBuffer.WriteTo(cacheFile)
 
-	m.cachedTracksMap[currentTrack.Id] = true
+	m.cachedTracksMap[string(currentTrack.Id)] = true
 	cachePlaylist, index := m.playlists.GetFirst(playlist.LOCAL)
 	cachePlaylist.AddTrack(currentTrack)
 	cmd := m.playlists.SetItem(index, cachePlaylist)
@@ -70,7 +70,7 @@ func (m *Model) removeCache(track *api.Track) tea.Cmd {
 		return nil
 	}
 
-	err := cache.Remove(track.Id)
+	err := cache.Remove(string(track.Id))
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to remove cached file: %s", err)
 		m.tracker.ShowError("cache remove")
@@ -78,9 +78,9 @@ func (m *Model) removeCache(track *api.Track) tea.Cmd {
 	}
 
 	cachePlaylist, index := m.playlists.GetFirst(playlist.LOCAL)
-	cachePlaylist.RemoveTrack(track.Id)
+	cachePlaylist.RemoveTrack(string(track.Id))
 
-	delete(m.cachedTracksMap, track.Id)
+	delete(m.cachedTracksMap, string(track.Id))
 	cmd := m.playlists.SetItem(index, cachePlaylist)
 
 	if m.playlists.SelectedItem().Kind == playlist.LOCAL {
@@ -107,7 +107,7 @@ func (m *Model) cacheAllLikedTracks() {
 	copy(tracksCopy, likedPlaylist.Tracks)
 
 	for _, track := range tracksCopy {
-		if m.cachedTracksMap[track.Id] {
+		if m.cachedTracksMap[string(track.Id)] {
 			continue
 		}
 
@@ -131,7 +131,7 @@ func (m *Model) cacheAllLikedTracks() {
 	wg.Wait()
 
 	for _, t := range cachedTracks {
-		m.cachedTracksMap[t.Id] = true
+		m.cachedTracksMap[string(t.Id)] = true
 	}
 	cachePlaylist, index := m.playlists.GetFirst(playlist.LOCAL)
 	if cachePlaylist != nil {
@@ -145,7 +145,7 @@ func (m *Model) cacheAllLikedTracks() {
 }
 
 func (m *Model) downloadAndCacheTrack(track *api.Track) error {
-	trackInfos, err := m.client.TrackDownloadInfo(track.Id)
+	trackInfos, err := m.client.TrackDownloadInfo(string(track.Id))
 	if err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (m *Model) downloadAndCacheTrack(track *api.Track) error {
 	}
 	defer trackReader.Close()
 
-	cacheFile, err := cache.Write(track.Id)
+	cacheFile, err := cache.Write(string(track.Id))
 	if err != nil {
 		return err
 	}
@@ -217,7 +217,7 @@ func (m *Model) downloadCurrentTrack() tea.Cmd {
 		return nil
 	}
 
-	trackInfos, err := m.client.TrackDownloadInfo(currentTrack.Id)
+	trackInfos, err := m.client.TrackDownloadInfo(string(currentTrack.Id))
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to get download info: %s", err)
 		m.tracker.ShowError("download: info")

@@ -485,7 +485,7 @@ func (client *YaMusicClient) PlayTrack(track *Track, fromCache bool) (err error)
 		"uid":                  {fmt.Sprint(client.userid)},
 		"from":                 {client.name},
 		"play-id":              {client.sessionid},
-		"track-id":             {track.Id},
+		"track-id":             {string(track.Id)},
 		"from-cache":           {fmt.Sprint(fromCache)},
 		"track-length-seconds": {fmt.Sprint(durationSeconds)},
 		"total-played-seconds": {fmt.Sprint(durationSeconds)},

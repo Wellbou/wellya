@@ -82,7 +82,7 @@ func (m *Model) addPlaylistControl(msg search.Control) tea.Cmd {
 		}
 
 		selectedTrack := &selectedPlaylist.Tracks[m.tracklist.Index()]
-		pl, err := m.client.AddToPlaylist(foundPlaylist.Kind, foundPlaylist.Revision, len(foundPlaylist.Tracks), selectedTrack.Id)
+		pl, err := m.client.AddToPlaylist(foundPlaylist.Kind, foundPlaylist.Revision, len(foundPlaylist.Tracks), string(selectedTrack.Id))
 		if err != nil {
 			log.Print(log.LVL_ERROR, "failed to add track [%s] to playlist [%s]: %s", selectedTrack.Id, foundPlaylist.Name, err)
 			m.tracker.ShowError("playlist add")
@@ -489,11 +489,11 @@ func (m *Model) sortPlaylist() tea.Cmd {
 
 	currentTrackId := ""
 	if selectedPlaylist.CurrentTrack >= 0 && selectedPlaylist.CurrentTrack < len(selectedPlaylist.Tracks) {
-		currentTrackId = selectedPlaylist.Tracks[selectedPlaylist.CurrentTrack].Id
+		currentTrackId = string(selectedPlaylist.Tracks[selectedPlaylist.CurrentTrack].Id)
 	}
 	selectedTrackId := ""
 	if m.tracklist.Index() >= 0 && m.tracklist.Index() < len(selectedPlaylist.Tracks) {
-		selectedTrackId = selectedPlaylist.Tracks[m.tracklist.Index()].Id
+		selectedTrackId = string(selectedPlaylist.Tracks[m.tracklist.Index()].Id)
 	}
 
 	switch m.sortMode {
@@ -522,10 +522,10 @@ func (m *Model) sortPlaylist() tea.Cmd {
 	}
 
 	for i, t := range selectedPlaylist.Tracks {
-		if t.Id == currentTrackId {
+		if string(t.Id) == currentTrackId {
 			selectedPlaylist.CurrentTrack = i
 		}
-		if t.Id == selectedTrackId {
+		if string(t.Id) == selectedTrackId {
 			selectedPlaylist.SelectedTrack = i
 		}
 	}
@@ -597,7 +597,7 @@ func (m *Model) exportPlaylist() tea.Cmd {
 		fmt.Fprintf(file, "#EXTINF:%d,%s - %s\n", durationSec, artist, t.Title)
 		link := api.ShareTrackLink(&t)
 		if link == "" {
-			link = t.Id
+			link = string(t.Id)
 		}
 		fmt.Fprintln(file, link)
 	}

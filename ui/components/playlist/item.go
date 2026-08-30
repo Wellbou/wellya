@@ -45,7 +45,7 @@ func (pl *Item) AddTrackToEnd(track *api.Track) {
 
 func (pl *Item) RemoveTrack(trackId string) int {
 	for i, ltrack := range pl.Tracks {
-		if ltrack.Id == trackId {
+		if string(ltrack.Id) == trackId {
 			if i+1 < len(pl.Tracks) {
 				pl.Tracks = append(pl.Tracks[:i], pl.Tracks[i+1:]...)
 			} else {

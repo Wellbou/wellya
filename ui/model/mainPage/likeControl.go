@@ -35,18 +35,18 @@ func (m *Model) likeTrack(track *api.Track, pl *playlist.Item) tea.Cmd {
 	likedPlaylist, index := m.playlists.GetFirst(playlist.LIKES)
 
 	var evType api.TrackEventType
-	if m.likedTracksMap[track.Id] {
-		if m.client.UnlikeTrack(track.Id) != nil {
+	if m.likedTracksMap[string(track.Id)] {
+		if m.client.UnlikeTrack(string(track.Id)) != nil {
 			return nil
 		}
-		delete(m.likedTracksMap, track.Id)
-		likedPlaylist.RemoveTrack(track.Id)
+		delete(m.likedTracksMap, string(track.Id))
+		likedPlaylist.RemoveTrack(string(track.Id))
 		evType = api.EV_TRACK_UNLIKED
 	} else {
-		if m.client.LikeTrack(track.Id) != nil {
+		if m.client.LikeTrack(string(track.Id)) != nil {
 			return nil
 		}
-		m.likedTracksMap[track.Id] = true
+		m.likedTracksMap[string(track.Id)] = true
 		likedPlaylist.AddTrack(track)
 		evType = api.EV_TRACK_LIKED
 	}
