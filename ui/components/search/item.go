@@ -1,7 +1,12 @@
 package search
 
-type Item string
+import "github.com/wellbou/wellya/api"
+
+type Item struct {
+	Label string
+	Track *api.Track
+}
 
 func (i Item) FilterValue() string {
-	return string(i)
+	return i.Label
 }

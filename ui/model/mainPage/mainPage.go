@@ -9,6 +9,7 @@ import (
 
 	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/config"
+	"github.com/wellbou/wellya/log"
 	"github.com/wellbou/wellya/media/handler"
 	"github.com/wellbou/wellya/ui/components/input"
 	"github.com/wellbou/wellya/ui/components/playlist"
@@ -25,7 +26,7 @@ import (
 	"github.com/dece2183/go-clipboard"
 )
 
-const AppVersion = "dev-queue-m3u"
+const AppVersion = "dev-search-tab"
 
 type Model struct {
 	program       *tea.Program
@@ -40,6 +41,7 @@ type Model struct {
 	tracklist      *tracklist.Model
 	tracker        *tracker.Model
 	isRadioTab     bool
+	isSearchTab    bool
 
 	searchDialog           *search.Model
 	inputDialog            *input.Model
@@ -120,6 +122,7 @@ func (m *Model) currentPlaylists() *playlist.Model {
 func (m *Model) toggleRadioTab() {
 	m.isRadioTab = !m.isRadioTab
 	if m.isRadioTab {
+		m.isSearchTab = false
 		m.radioPlaylists.Select(0)
 		if len(m.radioPlaylists.Items()) > 0 {
 			m.displayPlaylist(m.radioPlaylists.SelectedItem())
@@ -129,6 +132,16 @@ func (m *Model) toggleRadioTab() {
 		if len(m.playlists.Items()) > 0 {
 			m.displayPlaylist(m.playlists.SelectedItem())
 		}
+	}
+}
+
+func (m *Model) toggleSearchTab() {
+	m.isSearchTab = !m.isSearchTab
+	m.isRadioTab = false
+	if m.isSearchTab {
+		m.searchDialog.SetSize(m.width-style.SidePanelWidth-4, m.height-6)
+	} else {
+		m.searchDialog.Reset()
 	}
 }
 
@@ -215,6 +228,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		case controls.PlaylistsRadio.Contains(keypress):
 			m.toggleRadioTab()
+		case controls.TracksSearchTab.Contains(keypress):
+			m.toggleSearchTab()
 		case controls.Reload.Contains(keypress):
 			config.InitialLoad()
 			m.isLoading = true
@@ -443,7 +458,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	// search control update
 	case search.Control:
-		if m.isSearchActive {
+		if m.isSearchTab {
+			cmd = m.searchTabControl(msg)
+			cmds = append(cmds, cmd)
+		} else if m.isSearchActive {
 			cmd = m.searchControl(msg)
 			cmds = append(cmds, cmd)
 		} else if m.isAddPlaylistActive {
@@ -466,6 +484,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		if m.isLoading {
 			m.spinner, cmd = m.spinner.Update(message)
+			cmds = append(cmds, cmd)
+		} else if m.isSearchTab {
+			m.searchDialog, cmd = m.searchDialog.Update(message)
 			cmds = append(cmds, cmd)
 		} else if m.isSearchActive || m.isAddPlaylistActive {
 			m.searchDialog, cmd = m.searchDialog.Update(message)
@@ -510,12 +531,14 @@ func (m *Model) View() string {
 	tabActive := style.ActiveButtonStyle.Padding(0, 1).Render
 	tabInactive := style.ButtonStyle.Padding(0, 1).Render
 	var tabBar string
-	if m.isRadioTab {
-		tabBar = lipgloss.JoinHorizontal(lipgloss.Top, tabInactive(" Playlists "), tabActive(" Radio "))
+	if m.isSearchTab {
+		tabBar = lipgloss.JoinHorizontal(lipgloss.Top, tabInactive(" Playlists "), tabInactive(" Radio "), tabActive(" Search "))
+	} else if m.isRadioTab {
+		tabBar = lipgloss.JoinHorizontal(lipgloss.Top, tabInactive(" Playlists "), tabActive(" Radio "), tabInactive(" Search "))
 	} else {
-		tabBar = lipgloss.JoinHorizontal(lipgloss.Top, tabActive(" Playlists "), tabInactive(" Radio "))
+		tabBar = lipgloss.JoinHorizontal(lipgloss.Top, tabActive(" Playlists "), tabInactive(" Radio "), tabInactive(" Search "))
 	}
-	tabBar = lipgloss.NewStyle().Width(style.SidePanelWidth).Align(lipgloss.Center).Render(tabBar + " " + style.TrackVersionStyle.Render("R:switch"))
+	tabBar = lipgloss.NewStyle().Width(style.SidePanelWidth).Align(lipgloss.Center).Render(tabBar + " " + style.TrackVersionStyle.Render("S/R:switch"))
 
 	playlistView := activePls.View()
 	playlistWithTabs := lipgloss.JoinVertical(lipgloss.Left, tabBar, playlistView)
@@ -523,20 +546,24 @@ func (m *Model) View() string {
 
 	m.tracker.SetWidth(m.width - playlistWidth - 2)
 	m.tracklist.SetWidth(m.width - playlistWidth - 2)
+	m.searchDialog.SetSize(m.width-playlistWidth-2, m.height-6)
 
 	trackerView := m.tracker.View()
 	trackerHeight := lipgloss.Height(trackerView)
 	m.tracklist.SetHeight(m.height - trackerHeight - 2)
 
-	tracklistView := m.tracklist.View()
-
 	var midPanel string
-	if m.tracklist.Hidden {
-		midPanel = trackerView
-	} else if m.tracker.Hidden {
-		midPanel = tracklistView
+	if m.isSearchTab {
+		midPanel = m.searchDialog.View()
 	} else {
-		midPanel = lipgloss.JoinVertical(lipgloss.Left, tracklistView, trackerView)
+		tracklistView := m.tracklist.View()
+		if m.tracklist.Hidden {
+			midPanel = trackerView
+		} else if m.tracker.Hidden {
+			midPanel = tracklistView
+		} else {
+			midPanel = lipgloss.JoinVertical(lipgloss.Left, tracklistView, trackerView)
+		}
 	}
 
 	mainView := lipgloss.JoinHorizontal(lipgloss.Bottom, playlistWithTabs, midPanel)
@@ -758,4 +785,34 @@ func (m *Model) showTrackInfo() {
 	if m.tracklist.SelectedItem().Track != nil {
 		m.isTrackInfoActive = true
 	}
+}
+
+func (m *Model) searchTabControl(msg search.Control) tea.Cmd {
+	var cmd tea.Cmd
+	switch msg {
+	case search.SELECT:
+		if t := m.searchDialog.SelectedTrack(); t != nil {
+			cmd = m.playNowTrack(t)
+		}
+	case search.PLAY_NEXT:
+		if t := m.searchDialog.SelectedTrack(); t != nil {
+			cmd = m.enqueueNextTrack(t)
+		}
+	case search.CANCEL:
+		m.isSearchTab = false
+		m.searchDialog.Reset()
+	case search.TYPING:
+		req := m.searchDialog.InputValue()
+		if req == "" {
+			return nil
+		}
+		res, err := m.client.Search(req, api.SEARCH_ALL)
+		if err != nil {
+			log.Print(log.LVL_ERROR, "failed to search [%s]: %s", req, err)
+			m.tracker.ShowError("search")
+			return nil
+		}
+		m.searchDialog.SetResults(res.Tracks.Results)
+	}
+	return cmd
 }

@@ -626,6 +626,62 @@ func (m *Model) showStats() tea.Cmd {
 	return m.ShowToast(msg)
 }
 
+func (m *Model) enqueueNextTrack(track *api.Track) tea.Cmd {
+	if track == nil || m.currentPlaylistIndex < 0 {
+		return nil
+	}
+	curPls := m.currentPlaylists()
+	if m.currentPlaylistIndex >= len(curPls.Items()) {
+		return nil
+	}
+	pl := curPls.Items()[m.currentPlaylistIndex]
+	if pl.Kind == playlist.NONE || pl.Kind == playlist.HISTORY {
+		return nil
+	}
+	insertAt := pl.CurrentTrack + 1
+	if insertAt < 0 || insertAt > len(pl.Tracks) {
+		insertAt = len(pl.Tracks)
+	}
+	tCopy := *track
+	pl.Tracks = append(pl.Tracks[:insertAt], append([]api.Track{tCopy}, pl.Tracks[insertAt:]...)...)
+	if pl.CurrentTrack >= 0 && pl.CurrentTrack < len(pl.Tracks)-1 {
+		pl.CurrentTrack++
+	}
+	curPls.SetItem(m.currentPlaylistIndex, pl)
+	if curPls == m.activePlaylists() {
+		m.displayPlaylist(pl)
+	}
+	return m.ShowToast("queued: " + track.Title)
+}
+
+func (m *Model) playNowTrack(track *api.Track) tea.Cmd {
+	if track == nil {
+		return nil
+	}
+	curPls := m.currentPlaylists()
+	if m.currentPlaylistIndex < 0 || m.currentPlaylistIndex >= len(curPls.Items()) {
+		return nil
+	}
+	pl := curPls.Items()[m.currentPlaylistIndex]
+	if pl.Kind == playlist.NONE || pl.Kind == playlist.HISTORY {
+		return nil
+	}
+	insertAt := pl.CurrentTrack + 1
+	if insertAt < 0 || insertAt > len(pl.Tracks) {
+		insertAt = len(pl.Tracks)
+	}
+	tCopy := *track
+	pl.Tracks = append(pl.Tracks[:insertAt], append([]api.Track{tCopy}, pl.Tracks[insertAt:]...)...)
+	pl.CurrentTrack = insertAt
+	pl.SelectedTrack = insertAt
+	curPls.SetItem(m.currentPlaylistIndex, pl)
+	m.playTrack(&tCopy)
+	if curPls == m.activePlaylists() {
+		m.displayPlaylist(pl)
+	}
+	return nil
+}
+
 func (m *Model) moveTrack(direction int) tea.Cmd {
 	selectedPlaylist := m.activePlaylists().SelectedItem()
 	if len(selectedPlaylist.Tracks) == 0 || selectedPlaylist.Kind == playlist.MYWAVE || selectedPlaylist.Kind == playlist.STATION || selectedPlaylist.Kind == playlist.HISTORY || selectedPlaylist.Kind == playlist.NONE {

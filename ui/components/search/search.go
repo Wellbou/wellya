@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/config"
 	"github.com/wellbou/wellya/ui/model"
 	"github.com/wellbou/wellya/ui/style"
@@ -24,6 +25,7 @@ const (
 	TYPING
 	UPDATE_SUGGESTIONS
 	TOGGLE_FILTER
+	PLAY_NEXT
 )
 
 const (
@@ -35,6 +37,7 @@ type Model struct {
 	input                textinput.Model
 	width, height        int
 	value                string
+	selectedTrack        *api.Track
 	filter               int
 	updated              bool
 	lastUpdateTime       time.Time
@@ -49,6 +52,7 @@ func New() *Model {
 		additionalKeyBindigs: []key.Binding{
 			key.NewBinding(config.Current.Controls.Apply.Binding(), config.Current.Controls.Apply.Help("search")),
 			key.NewBinding(config.Current.Controls.Cancel.Binding(), config.Current.Controls.Cancel.Help("cancel")),
+			key.NewBinding(config.Current.Controls.TracksPlayNext.Binding(), config.Current.Controls.TracksPlayNext.Help("play next")),
 		},
 		Title:  "Search",
 		Action: "search",
@@ -109,30 +113,17 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		keypress := msg.String()
 
 		switch {
+		case controls.TracksPlayNext.Contains(keypress):
+			if m.pickSelectedTrack() != nil {
+				cmds = append(cmds, model.Cmd(PLAY_NEXT))
+				m.captureSelected(true)
+			}
 		case controls.Apply.Contains(keypress):
 			cmds = append(cmds, model.Cmd(SELECT))
-
-			if len(m.list.Items()) == 0 {
-				m.value = ""
-				break
-			}
-
-			suggest, ok := m.list.SelectedItem().(Item)
-			if !ok {
-				m.value = ""
-				break
-			}
-
-			m.value = string(suggest)
-			m.list.SetItems([]list.Item{})
-			m.list.Select(0)
-			m.input.Reset()
+			m.captureSelected(false)
 		case controls.Cancel.Contains(keypress):
 			cmds = append(cmds, model.Cmd(CANCEL))
-			m.list.SetItems([]list.Item{})
-			m.list.Select(0)
-			m.input.Reset()
-			m.value = ""
+			m.Reset()
 		case controls.CursorUp.Contains(keypress):
 			m.list, cmd = m.list.Update(msg)
 			cmds = append(cmds, cmd)
@@ -176,16 +167,47 @@ func (m *Model) SetSuggestions(suggestions []string) {
 
 	if len(suggestions) == 0 || m.input.Value() != suggestions[0] {
 		if len(m.input.Value()) > 0 {
-			items = append(items, Item(m.input.Value()))
+			items = append(items, Item{Label: m.input.Value()})
 		}
 	}
 
 	for _, sug := range suggestions {
-		items = append(items, Item(sug))
+		items = append(items, Item{Label: sug})
 	}
 
 	m.list.SetItems(items)
 	m.list.Select(0)
+}
+
+func (m *Model) SetResults(trackResults []api.Track) {
+	items := make([]list.Item, 0, len(trackResults))
+	for i := range trackResults {
+		t := trackResults[i]
+		items = append(items, Item{
+			Label: labelForTrack(&t),
+			Track: &t,
+		})
+	}
+	m.list.SetItems(items)
+	m.list.Select(0)
+}
+
+func (m *Model) captureSelected(playNext bool) {
+	if t := m.pickSelectedTrack(); t != nil {
+		m.selectedTrack = t
+		m.value = string(t.Id)
+	} else {
+		m.value = ""
+		m.selectedTrack = nil
+	}
+}
+
+func (m *Model) pickSelectedTrack() *api.Track {
+	it, ok := m.list.SelectedItem().(Item)
+	if !ok {
+		return nil
+	}
+	return it.Track
 }
 
 func (m *Model) InputValue() string {
@@ -196,12 +218,35 @@ func (m *Model) SuggestionValue() (string, bool) {
 	return m.value, len(m.value) > 0
 }
 
+func (m *Model) SelectedTrack() *api.Track {
+	return m.selectedTrack
+}
+
 func (m *Model) Filter() int {
 	return m.filter
 }
 
 func (m *Model) SetFilter(f int) {
 	m.filter = f
+}
+
+func (m *Model) Reset() {
+	m.list.SetItems([]list.Item{})
+	m.list.Select(0)
+	m.input.Reset()
+	m.value = ""
+	m.selectedTrack = nil
+}
+
+func labelForTrack(t *api.Track) string {
+	artist := ""
+	if len(t.Artists) > 0 {
+		artist = t.Artists[0].Name
+	}
+	if artist == "" {
+		return t.Title
+	}
+	return artist + " — " + t.Title
 }
 
 func filterName(f int) string {
