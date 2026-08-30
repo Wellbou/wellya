@@ -128,6 +128,7 @@ type Controls struct {
 	PlaylistsDown   *Key `yaml:"playlists-down"`
 	PlaylistsRename *Key `yaml:"playlists-rename"`
 	PlaylistsHide   *Key `yaml:"playlists-hide"`
+	PlaylistsRadio  *Key `yaml:"playlists-radio"`
 	// Track list control
 	TracksNextPage           *Key `yaml:"tracks-next-page"`
 	TracksPrevPage           *Key `yaml:"tracks-previous-page"`
@@ -226,6 +227,7 @@ var defaultConfig = Config{
 		PlaylistsDown:            NewKey("ctrl+down"),
 		PlaylistsRename:          NewKey("ctrl+r"),
 		PlaylistsHide:            NewKey("ctrl+b"),
+		PlaylistsRadio:           NewKey("R"),
 		TracksNextPage:           NewKey("pgup"),
 		TracksPrevPage:           NewKey("pgdown"),
 		TracksLike:               NewKey("l"),

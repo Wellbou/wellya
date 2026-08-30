@@ -26,6 +26,7 @@ type menuBlock struct {
 func (m *Model) initialLoad() {
 	m.tracker.HideError()
 	m.playlists.Reset()
+	m.radioPlaylists.Reset()
 
 	if len(config.Current.Token) == 0 {
 		log.Print(log.LVL_ERROR, "missing client token, check the config file at '%s'", config.Path())
@@ -66,43 +67,17 @@ func (m *Model) initialLoad() {
 	go m.loadUserPlaylists(&wg, &userPlaylistsMenuBlock)
 	wg.Wait()
 
-	if myWaveMenuBlock.err == nil {
-		for _, item := range myWaveMenuBlock.items {
-			m.playlists.InsertItem(-1, item)
-		}
-	} else {
-		log.Print(log.LVL_ERROR, "unable to init rotor session: %s", myWaveMenuBlock.err)
-		m.tracker.ShowError("unable to init rotor session")
-	}
-
 	if stationsMenuBlock.err == nil {
-		m.playlists.InsertItem(-1, playlist.ItemEmpty())
-		m.playlists.InsertItem(-1, playlist.ItemCategory("stations:"))
+		m.radioPlaylists.InsertItem(-1, playlist.ItemCategory("stations:"))
 		for _, item := range stationsMenuBlock.items {
-			m.playlists.InsertItem(-1, item)
+			m.radioPlaylists.InsertItem(-1, item)
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to list stations: %s", stationsMenuBlock.err)
 		m.tracker.ShowError("stations list")
 	}
 
-	if localTracksMenuBlock.err == nil {
-		for _, item := range localTracksMenuBlock.items {
-			m.playlists.InsertItem(-1, item)
-			for _, tr := range item.Tracks {
-				m.cachedTracksMap[tr.Id] = true
-			}
-		}
-	} else {
-		log.Print(log.LVL_ERROR, "failed to list cached tracks: %s", localTracksMenuBlock.err)
-		m.tracker.ShowError("cache list")
-	}
-
-	m.playlists.InsertItem(-1, &playlist.Item{Name: "history", Kind: playlist.HISTORY, Active: true, Subitem: false})
-
-	m.playlists.InsertItem(-1, playlist.ItemEmpty())
 	m.playlists.InsertItem(-1, playlist.ItemCategory("likes:"))
-
 	if likedTracksMenuBlock.err == nil {
 		for _, item := range likedTracksMenuBlock.items {
 			m.playlists.InsertItem(-1, item)
@@ -133,6 +108,8 @@ func (m *Model) initialLoad() {
 		m.tracker.ShowError("pinned albums")
 	}
 
+	m.playlists.InsertItem(-1, playlist.ItemEmpty())
+	m.playlists.InsertItem(-1, playlist.ItemCategory("playlists:"))
 	if userPlaylistsMenuBlock.err == nil {
 		for _, item := range userPlaylistsMenuBlock.items {
 			m.playlists.InsertItem(-1, item)
@@ -142,8 +119,35 @@ func (m *Model) initialLoad() {
 		m.tracker.ShowError("playlists")
 	}
 
+	if myWaveMenuBlock.err == nil {
+		m.playlists.InsertItem(-1, playlist.ItemEmpty())
+		for _, item := range myWaveMenuBlock.items {
+			m.playlists.InsertItem(-1, item)
+		}
+	} else {
+		log.Print(log.LVL_ERROR, "unable to init rotor session: %s", myWaveMenuBlock.err)
+		m.tracker.ShowError("unable to init rotor session")
+	}
+
+	m.playlists.InsertItem(-1, playlist.ItemEmpty())
+	m.playlists.InsertItem(-1, &playlist.Item{Name: "history", Kind: playlist.HISTORY, Active: true, Subitem: false})
+
+	if localTracksMenuBlock.err == nil {
+		for _, item := range localTracksMenuBlock.items {
+			m.playlists.InsertItem(-1, item)
+			for _, tr := range item.Tracks {
+				m.cachedTracksMap[tr.Id] = true
+			}
+		}
+	} else {
+		log.Print(log.LVL_ERROR, "failed to list cached tracks: %s", localTracksMenuBlock.err)
+		m.tracker.ShowError("cache list")
+	}
+
 	m.currentPlaylistIndex = -1
+	m.currentIsRadio = false
 	m.playlists.Select(0)
+	m.radioPlaylists.Select(0)
 	m.Send(LOADING_DONE)
 }
 

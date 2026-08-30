@@ -34,10 +34,12 @@ type Model struct {
 	mediaHandler  handler.MediaHandler
 	width, height int
 
-	spinner   spinner.Model
-	playlists *playlist.Model
-	tracklist *tracklist.Model
-	tracker   *tracker.Model
+	spinner        spinner.Model
+	playlists      *playlist.Model
+	radioPlaylists *playlist.Model
+	tracklist      *tracklist.Model
+	tracker        *tracker.Model
+	isRadioTab     bool
 
 	searchDialog           *search.Model
 	inputDialog            *input.Model
@@ -54,6 +56,7 @@ type Model struct {
 	confirmMessage         string
 
 	currentPlaylistIndex int
+	currentIsRadio       bool
 	playGeneration       int
 	likedTracksMap       map[string]bool
 	cachedTracksMap      map[string]bool
@@ -91,12 +94,42 @@ func New(mediaHandler handler.MediaHandler) *Model {
 	m.historyTracks = make([]api.Track, 0, 100)
 	m.spinner = spinner.New(spinner.WithSpinner(spinner.Points))
 	m.playlists = playlist.New(m.program, "YaMusic")
+	m.radioPlaylists = playlist.New(m.program, "Radio")
 	m.tracklist = tracklist.New(m.program, &m.likedTracksMap, &m.cachedTracksMap)
 	m.tracker = tracker.New(m.program, &m.likedTracksMap)
 	m.searchDialog = search.New()
 	m.inputDialog = input.New()
 
 	return m
+}
+
+func (m *Model) activePlaylists() *playlist.Model {
+	if m.isRadioTab {
+		return m.radioPlaylists
+	}
+	return m.playlists
+}
+
+func (m *Model) currentPlaylists() *playlist.Model {
+	if m.currentIsRadio {
+		return m.radioPlaylists
+	}
+	return m.playlists
+}
+
+func (m *Model) toggleRadioTab() {
+	m.isRadioTab = !m.isRadioTab
+	if m.isRadioTab {
+		m.radioPlaylists.Select(0)
+		if len(m.radioPlaylists.Items()) > 0 {
+			m.displayPlaylist(m.radioPlaylists.SelectedItem())
+		}
+	} else {
+		m.playlists.Select(0)
+		if len(m.playlists.Items()) > 0 {
+			m.displayPlaylist(m.playlists.SelectedItem())
+		}
+	}
 }
 
 func (m *Model) Run() error {
@@ -180,10 +213,14 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case m.isRenamePlaylistActive || m.isUploadActive:
 			m.inputDialog, cmd = m.inputDialog.Update(message)
 			cmds = append(cmds, cmd)
+		case controls.PlaylistsRadio.Contains(keypress):
+			m.toggleRadioTab()
 		case controls.Reload.Contains(keypress):
 			config.InitialLoad()
 			m.isLoading = true
 			cmd = m.playlists.Reset()
+			cmds = append(cmds, cmd)
+			cmd = m.radioPlaylists.Reset()
 			cmds = append(cmds, cmd)
 			cmds = append(cmds, m.spinner.Tick)
 			go m.initialLoad()
@@ -192,8 +229,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.spinner, cmd = m.spinner.Update(message)
 				cmds = append(cmds, cmd)
 			} else {
-				m.playlists, cmd = m.playlists.Update(message)
-				cmds = append(cmds, cmd)
+				if m.isRadioTab {
+					m.radioPlaylists, cmd = m.radioPlaylists.Update(message)
+					cmds = append(cmds, cmd)
+				} else {
+					m.playlists, cmd = m.playlists.Update(message)
+					cmds = append(cmds, cmd)
+				}
 				m.tracklist, cmd = m.tracklist.Update(message)
 				cmds = append(cmds, cmd)
 				m.tracker, cmd = m.tracker.Update(message)
@@ -206,12 +248,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg {
 		case playlist.CURSOR_UP, playlist.CURSOR_DOWN:
 			m.showQueue = false
-			selectedPlaylist := m.playlists.SelectedItem()
+			active := m.activePlaylists()
+			selectedPlaylist := active.SelectedItem()
 
 			if selectedPlaylist.Kind == playlist.HISTORY {
 				selectedPlaylist.Tracks = make([]api.Track, len(m.historyTracks))
 				copy(selectedPlaylist.Tracks, m.historyTracks)
-				m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+				active.SetItem(active.Index(), selectedPlaylist)
 			}
 
 			if selectedPlaylist.Kind == playlist.ALBUMS && len(selectedPlaylist.Albums) > 0 {
@@ -220,14 +263,17 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 			if selectedPlaylist.Kind == playlist.STATION && len(selectedPlaylist.Tracks) == 0 && m.client != nil {
 				m.loadStationTracks(selectedPlaylist)
-				m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+				active.SetItem(active.Index(), selectedPlaylist)
 			}
 
 			if m.currentPlaylistIndex >= 0 {
-				currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
-				if selectedPlaylist.IsSame(currentPlaylist) && len(selectedPlaylist.Tracks) > 0 {
-					selectedPlaylist.SelectedTrack = selectedPlaylist.CurrentTrack
-					m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+				curPls := m.currentPlaylists()
+				if m.currentPlaylistIndex < len(curPls.Items()) {
+					currentPlaylist := curPls.Items()[m.currentPlaylistIndex]
+					if selectedPlaylist.IsSame(currentPlaylist) && len(selectedPlaylist.Tracks) > 0 {
+						selectedPlaylist.SelectedTrack = selectedPlaylist.CurrentTrack
+						active.SetItem(active.Index(), selectedPlaylist)
+					}
 				}
 			}
 
@@ -236,7 +282,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.tracklist.Shufflable = (selectedPlaylist.Kind != playlist.NONE && selectedPlaylist.Kind != playlist.MYWAVE && selectedPlaylist.Kind != playlist.STATION && selectedPlaylist.Kind != playlist.HISTORY && len(selectedPlaylist.Tracks) > 0)
 		case playlist.RENAME:
-			selectedPlaylist := m.playlists.SelectedItem()
+			active := m.activePlaylists()
+			selectedPlaylist := active.SelectedItem()
 			if selectedPlaylist.Kind < playlist.USER {
 				break
 			}
@@ -251,7 +298,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tracklist.Control:
 		switch msg {
 		case tracklist.PLAY:
-			playlistItem := m.playlists.SelectedItem()
+			playlistItem := m.activePlaylists().SelectedItem()
 			if !playlistItem.Active {
 				break
 			}
@@ -264,10 +311,11 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tracklist.SHOW_QUEUE:
 			m.toggleQueue()
 		case tracklist.CURSOR_UP, tracklist.CURSOR_DOWN:
-			currentPlaylist := m.playlists.SelectedItem()
+			active := m.activePlaylists()
+			currentPlaylist := active.SelectedItem()
 			cursorIndex := m.tracklist.Index()
 			currentPlaylist.SelectedTrack = cursorIndex
-			cmd = m.playlists.SetItem(m.playlists.Index(), currentPlaylist)
+			cmd = active.SetItem(active.Index(), currentPlaylist)
 			cmds = append(cmds, cmd)
 		case tracklist.LIKE:
 			if !m.albumListActive() {
@@ -284,7 +332,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.isAddPlaylistActive = true
 			m.Send(search.UPDATE_SUGGESTIONS)
 		case tracklist.REMOVE_FROM_PLAYLIST:
-			selectedPlaylist := m.playlists.SelectedItem()
+			selectedPlaylist := m.activePlaylists().SelectedItem()
 			cmd = m.confirmRemoveFromPlaylist(selectedPlaylist, m.tracklist.Index())
 			cmds = append(cmds, cmd)
 		case tracklist.SEARCH:
@@ -293,7 +341,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.isSearchActive = true
 			m.Send(search.UPDATE_SUGGESTIONS)
 		case tracklist.SHUFFLE:
-			cmd = m.shufflePlaylist(m.playlists.SelectedItem())
+			cmd = m.shufflePlaylist(m.activePlaylists().SelectedItem())
 			cmds = append(cmds, cmd)
 		case tracklist.SHARE:
 			if m.albumListActive() {
@@ -304,11 +352,12 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.clipboard.CopyText(link)
 			}
 		case tracklist.BACK:
-			selectedPlaylist := m.playlists.SelectedItem()
+			active := m.activePlaylists()
+			selectedPlaylist := active.SelectedItem()
 			if selectedPlaylist.Kind == playlist.ALBUMS && len(selectedPlaylist.Albums) > 0 && selectedPlaylist.SelectedAlbum >= 0 {
 				selectedPlaylist.SelectedAlbum = -1
 				m.displayPlaylist(selectedPlaylist)
-				cmd = m.playlists.SetItem(m.playlists.Index(), selectedPlaylist)
+				cmd = active.SetItem(active.Index(), selectedPlaylist)
 				cmds = append(cmds, cmd)
 			}
 		case tracklist.MOVE_UP:
@@ -425,8 +474,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputDialog, cmd = m.inputDialog.Update(message)
 			cmds = append(cmds, cmd)
 		} else {
-			m.playlists, cmd = m.playlists.Update(message)
-			cmds = append(cmds, cmd)
+			if m.isRadioTab {
+				m.radioPlaylists, cmd = m.radioPlaylists.Update(message)
+				cmds = append(cmds, cmd)
+			} else {
+				m.playlists, cmd = m.playlists.Update(message)
+				cmds = append(cmds, cmd)
+			}
 			m.tracklist, cmd = m.tracklist.Update(message)
 			cmds = append(cmds, cmd)
 			m.tracker, cmd = m.tracker.Update(message)
@@ -452,8 +506,20 @@ func (m *Model) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.trackInfoView())
 	}
 
-	playlistView := m.playlists.View()
-	playlistWidth := lipgloss.Width(playlistView)
+	activePls := m.activePlaylists()
+	tabActive := style.ActiveButtonStyle.Padding(0, 1).Render
+	tabInactive := style.ButtonStyle.Padding(0, 1).Render
+	var tabBar string
+	if m.isRadioTab {
+		tabBar = lipgloss.JoinHorizontal(lipgloss.Top, tabInactive(" Playlists "), tabActive(" Radio "))
+	} else {
+		tabBar = lipgloss.JoinHorizontal(lipgloss.Top, tabActive(" Playlists "), tabInactive(" Radio "))
+	}
+	tabBar = lipgloss.NewStyle().Width(style.SidePanelWidth).Align(lipgloss.Center).Render(tabBar + " " + style.TrackVersionStyle.Render("R:switch"))
+
+	playlistView := activePls.View()
+	playlistWithTabs := lipgloss.JoinVertical(lipgloss.Left, tabBar, playlistView)
+	playlistWidth := lipgloss.Width(playlistWithTabs)
 
 	m.tracker.SetWidth(m.width - playlistWidth - 2)
 	m.tracklist.SetWidth(m.width - playlistWidth - 2)
@@ -473,7 +539,7 @@ func (m *Model) View() string {
 		midPanel = lipgloss.JoinVertical(lipgloss.Left, tracklistView, trackerView)
 	}
 
-	mainView := lipgloss.JoinHorizontal(lipgloss.Bottom, playlistView, midPanel)
+	mainView := lipgloss.JoinHorizontal(lipgloss.Bottom, playlistWithTabs, midPanel)
 
 	versionLabel := style.TrackVersionStyle.Render(" " + AppVersion + " ")
 	mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, versionLabel)
@@ -491,8 +557,11 @@ func (m *Model) resize(width, height int) {
 	m.width, m.height = width, height
 
 	m.playlists.SetSize(style.SidePanelWidth, height-4)
+	m.radioPlaylists.SetSize(style.SidePanelWidth, height-4)
 	if !m.isPlaylistHideOverride {
-		m.playlists.Hidden = m.width < style.SidePanelAutohide
+		hide := m.width < style.SidePanelAutohide
+		m.playlists.Hidden = hide
+		m.radioPlaylists.Hidden = hide
 	}
 
 	searchWidth := style.SearchModalWidth
@@ -543,7 +612,10 @@ func (m *Model) mediaHandle() {
 			if !ok || !val {
 				break
 			}
-			currentPlaylist := m.playlists.Items()[m.currentPlaylistIndex]
+			if m.currentPlaylistIndex < 0 || m.currentPlaylistIndex >= len(m.currentPlaylists().Items()) {
+				break
+			}
+			currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
 			if len(currentPlaylist.Tracks) == 0 {
 				break
 			}
