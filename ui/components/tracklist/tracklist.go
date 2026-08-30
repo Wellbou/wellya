@@ -113,11 +113,12 @@ func (m *Model) View() string {
 	m.helpMap.Shufflable = m.Shufflable
 	helpView := m.help.View(m.helpMap)
 	filterView := m.filterInput.View()
-	filterHeight := 1
-	if lipgloss.Width(filterView) > 0 {
-		filterHeight = 2
+	helpHeight := lipgloss.Height(helpView)
+	filterHeight := lipgloss.Height(filterView)
+	if filterHeight < 1 {
+		filterHeight = 1
 	}
-	m.list.SetHeight(m.height - lipgloss.Height(helpView) - filterHeight - 4)
+	m.list.SetHeight(m.height - helpHeight - filterHeight - 4)
 
 	listView := m.list.View()
 	if lipgloss.Height(listView) <= m.list.Height() {
@@ -125,8 +126,8 @@ func (m *Model) View() string {
 		listView = listView[:lastLine] + "\n" + listView[lastLine:]
 	}
 
-	filterBox := style.TrackBoxStyle.Width(m.width - 4).Render(filterView)
-	return style.TrackBoxStyle.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, filterBox, listView, "", helpView))
+	header := lipgloss.JoinHorizontal(lipgloss.Top, style.TrackVersionStyle.Render(" Filter: "), filterView)
+	return style.TrackBoxStyle.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, header, listView, "", helpView))
 }
 
 func (m *Model) FilterValue() string {

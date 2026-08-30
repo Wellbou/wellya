@@ -266,6 +266,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			active := m.activePlaylists()
 			selectedPlaylist := active.SelectedItem()
 
+			if !selectedPlaylist.Active && !selectedPlaylist.Subitem {
+				return m, nil
+			}
+
 			if selectedPlaylist.Kind == playlist.HISTORY {
 				selectedPlaylist.Tracks = make([]api.Track, len(m.historyTracks))
 				copy(selectedPlaylist.Tracks, m.historyTracks)
