@@ -61,30 +61,40 @@ func (h *BufferedStream) Close() error {
 	return err
 }
 
+func (h *BufferedStream) finishLocked() {
+	if !h.done {
+		h.source.Close()
+		h.stopBuffering()
+		h.done = true
+	}
+}
+
 func (h *BufferedStream) Read(dest []byte) (n int, err error) {
 	h.mux.Lock()
+	defer h.mux.Unlock()
 
 	readBufLen := int64(len(h.readBuffer))
 	destLen := int64(len(dest))
 
 	if h.readIndex >= readBufLen {
-		need := (h.readIndex - readBufLen) + destLen
-		newFrame := make([]byte, need)
-		h.mux.Unlock()
-
+		if gap := h.readIndex - readBufLen; gap > 0 {
+			if _, derr := io.CopyN(io.Discard, h.source, gap); derr != nil {
+				h.lastError = derr
+				h.finishLocked()
+				return 0, io.EOF
+			}
+		}
+		newFrame := make([]byte, destLen)
 		n, err = io.ReadFull(h.source, newFrame)
-
-		h.mux.Lock()
 		h.readBuffer = append(h.readBuffer, newFrame[:n]...)
-		if h.readIndex < int64(len(h.readBuffer)) {
-			copy(dest, h.readBuffer[h.readIndex:])
-		} else {
+		if n > 0 {
+			copy(dest, h.readBuffer[h.readIndex:h.readIndex+int64(n)])
+		}
+		h.readIndex += int64(n)
+		if h.totalSize > 0 && h.readIndex >= h.totalSize {
 			err = io.EOF
 		}
-		h.readIndex += int64(n) - (h.readIndex - readBufLen)
 	} else {
-		var unbufferedLen int
-
 		endIndex := h.readIndex + destLen
 		if endIndex > readBufLen {
 			endIndex = readBufLen
@@ -93,12 +103,10 @@ func (h *BufferedStream) Read(dest []byte) (n int, err error) {
 
 		if destLen-int64(len(bufferedPart)) > 0 {
 			unbufferedPart := make([]byte, destLen-int64(len(bufferedPart)))
-			h.mux.Unlock()
-
-			unbufferedLen, err = h.source.Read(unbufferedPart)
+			unbufferedLen, rerr := h.source.Read(unbufferedPart)
 			unbufferedPart = unbufferedPart[:unbufferedLen]
+			err = rerr
 
-			h.mux.Lock()
 			copy(dest, append(bufferedPart, unbufferedPart...))
 			n = len(bufferedPart) + unbufferedLen
 			h.readBuffer = append(h.readBuffer, unbufferedPart...)
@@ -108,23 +116,20 @@ func (h *BufferedStream) Read(dest []byte) (n int, err error) {
 		}
 
 		h.readIndex += int64(n)
-		if h.readIndex >= h.totalSize {
+		if h.totalSize > 0 && h.readIndex >= h.totalSize {
 			err = io.EOF
 		}
 	}
 
 	if err != nil {
-		if err == io.EOF && !h.done {
-			h.source.Close()
-			h.stopBuffering()
-			h.done = true
+		if err == io.EOF {
+			h.finishLocked()
 		} else if err == http.ErrBodyReadAfterClose {
 			err = io.EOF
 		}
 	}
 
 	h.lastError = err
-	h.mux.Unlock()
 	return
 }
 
@@ -210,13 +215,15 @@ func (h *BufferedStream) BufferAll() {
 
 	h.readBuffer = append(h.readBuffer, newFrame...)
 	h.source.Close()
-	h.done = true
+	h.stopBuffering()
 }
 
 func (h *BufferedStream) WriteTo(dest io.Writer) (int64, error) {
 	h.mux.Lock()
-	defer h.mux.Unlock()
-	n, err := dest.Write(h.readBuffer)
+	snapshot := make([]byte, len(h.readBuffer))
+	copy(snapshot, h.readBuffer)
+	h.mux.Unlock()
+	n, err := dest.Write(snapshot)
 	return int64(n), err
 }
 

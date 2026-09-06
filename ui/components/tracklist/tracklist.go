@@ -55,6 +55,7 @@ type Model struct {
 	helpMap       *helpKeyMap
 	filterInput   textinput.Model
 	allItems      []Item
+	preFilterIndex int
 	width, height int
 	Hidden        bool
 	Title         string
@@ -63,10 +64,11 @@ type Model struct {
 
 func New(p *tea.Program, likesMap *map[string]bool, cacheMap *map[string]bool) *Model {
 	m := &Model{
-		program: p,
-		help:    help.New(),
-		helpMap: newHelpMap(),
-		Title:   "Tracks",
+		program:        p,
+		help:           help.New(),
+		helpMap:        newHelpMap(),
+		Title:          "Tracks",
+		preFilterIndex: -1,
 	}
 
 	controls := config.Current.Controls
@@ -147,7 +149,14 @@ func (m *Model) applyFilter() {
 			newItems[i] = m.allItems[i]
 		}
 		m.list.SetItems(newItems)
+		if m.preFilterIndex >= 0 && m.preFilterIndex < len(newItems) {
+			m.list.Select(m.preFilterIndex)
+		}
+		m.preFilterIndex = -1
 		return
+	}
+	if m.preFilterIndex < 0 {
+		m.preFilterIndex = m.list.Index()
 	}
 	filtered := []list.Item{}
 	for _, it := range m.allItems {
@@ -295,6 +304,7 @@ func (m *Model) Items() []Item {
 func (m *Model) SetItems(items []Item) tea.Cmd {
 	m.allItems = make([]Item, len(items))
 	copy(m.allItems, items)
+	m.preFilterIndex = -1
 	m.applyFilter()
 	return nil
 }

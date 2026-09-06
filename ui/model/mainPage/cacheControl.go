@@ -48,7 +48,11 @@ func (m *Model) cacheCurrentTrack() tea.Cmd {
 	tag.WriteTo(cacheFile)
 
 	trackBuffer := m.tracker.TrackBuffer()
-	trackBuffer.Seek(0, 0)
+	if trackBuffer == nil || trackBuffer.BufferingProgress() < 1 {
+		cacheFile.Close()
+		_ = os.Remove(cacheFile.Name())
+		return nil
+	}
 	trackBuffer.WriteTo(cacheFile)
 
 	m.cachedTracksMap[string(currentTrack.Id)] = true
@@ -194,13 +198,12 @@ func (m *Model) downloadCurrentTrack() tea.Cmd {
 
 	downloadDir := config.Current.DownloadDir
 	if downloadDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			log.Print(log.LVL_ERROR, "failed to get home dir: %s", err)
+		downloadDir = config.MusicDir()
+		if downloadDir == "" {
+			log.Print(log.LVL_ERROR, "failed to get home dir")
 			m.tracker.ShowError("download: home dir")
 			return nil
 		}
-		downloadDir = filepath.Join(home, "Music", "wellya")
 	}
 
 	if err := os.MkdirAll(downloadDir, 0755); err != nil {

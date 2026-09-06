@@ -45,7 +45,7 @@ func newHelpMap() *helpKeyMap {
 		),
 		LikeUnlike: key.NewBinding(
 			controls.PlayerLike.Binding(),
-			controls.PlayerLike.Help("like/unlike"),
+			controls.PlayerLike.Help("like playing"),
 		),
 		CacheTrack: key.NewBinding(
 			controls.PlayerCache.Binding(),
@@ -107,7 +107,8 @@ func newHelpMap() *helpKeyMap {
 }
 
 func (k helpKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.PlayPause, k.NextTrack, k.PrevTrack, k.LikeUnlike, k.VolUp, k.VolDown}
+	controls := config.Current.Controls
+	return []key.Binding{key.NewBinding(controls.KeysHelp.Binding(), controls.KeysHelp.Help("all hotkeys"))}
 }
 
 func (k helpKeyMap) FullHelp() [][]key.Binding {

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/config"
@@ -18,13 +20,13 @@ import (
 	"github.com/wellbou/wellya/ui/components/tracker"
 	"github.com/wellbou/wellya/ui/components/tracklist"
 	"github.com/wellbou/wellya/ui/helpers"
-	"github.com/wellbou/wellya/ui/model"
 	"github.com/wellbou/wellya/ui/style"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dece2183/go-clipboard"
+	"github.com/mattn/go-runewidth"
 )
 
 const AppVersion = "dev-help-modal"
@@ -174,7 +176,23 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
 	case LoadingMsg:
 		m.isLoading = false
-		return m, model.Cmd(playlist.CURSOR_UP)
+		active := m.activePlaylists()
+		items := active.Items()
+		sel := 0
+		for i, it := range items {
+			if it.Active {
+				sel = i
+				break
+			}
+		}
+		active.Select(sel)
+		if len(items) > 0 {
+			selectedPlaylist := items[sel]
+			m.displayPlaylist(selectedPlaylist)
+			m.indicateCurrentTrackPlaying(m.tracker.IsPlaying())
+			m.tracklist.Shufflable = (selectedPlaylist.Kind != playlist.NONE && selectedPlaylist.Kind != playlist.MYWAVE && selectedPlaylist.Kind != playlist.STATION && selectedPlaylist.Kind != playlist.HISTORY && len(selectedPlaylist.Tracks) > 0)
+		}
+		return m, nil
 
 	case toastTickMsg:
 		if m.toastTimer > 0 {
@@ -185,6 +203,35 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, toastTickCmd)
 			}
 		}
+
+	case trackReadyMsg:
+		if msg.generation != m.playGeneration {
+			if msg.buffer != nil {
+				msg.buffer.Close()
+			}
+			break
+		}
+		if m.currentPlaylistIndex >= 0 && m.currentPlaylistIndex < len(m.currentPlaylists().Items()) {
+			currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
+			if currentPlaylist.Rotor {
+				ev := api.NewTrackFeedbackEvent(api.EV_TRACK_STARTED, msg.track, 0)
+				go m.client.RotorSessionFeedback(currentPlaylist.SessionId, api.NewFeedback(currentPlaylist.SessionBatch, ev))
+				log.Print(log.LVL_INFO, "feedback event sended: "+ev.Type+" track: "+msg.track.Title)
+			}
+		}
+		m.tracker.SetBitrate(msg.bitrate)
+		m.tracker.StartTrack(msg.track, msg.buffer, msg.lyrics)
+		m.indicateCurrentTrackPlaying(true)
+		m.mediaHandler.OnPlayback()
+		if m.client != nil {
+			go m.client.PlayTrack(msg.track, msg.fromCache)
+		}
+
+	case trackFailedMsg:
+		if msg.generation != m.playGeneration {
+			break
+		}
+		m.tracker.ShowError(msg.reason)
 
 	case tea.WindowSizeMsg:
 		m.resize(msg.Width, msg.Height)
@@ -584,7 +631,15 @@ func (m *Model) View() string {
 	mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, versionLabel)
 
 	if m.helpDialog.Visible() {
-		return m.helpDialog.View()
+		boxW := 72
+		if m.width-4 < boxW {
+			boxW = m.width - 4
+		}
+		boxH := m.height - 4
+		if boxH < 10 {
+			boxH = 10
+		}
+		return modalOverlay(mainView, m.helpDialog.Box(m.helpDialog.Lines(), boxW, boxH), m.width)
 	}
 
 	if m.toastMessage != "" {
@@ -796,6 +851,104 @@ func (m *Model) trackInfoView() string {
 
 	body := style.DialogBoxStyle.Render(strings.Join(lines, "\n"))
 	return lipgloss.JoinVertical(lipgloss.Left, body)
+}
+
+var sgrRe = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
+
+func stripSGR(s string) string {
+	return sgrRe.ReplaceAllString(s, "")
+}
+
+func truncateVisible(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	vw := 0
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) && (s[j] < '@' || s[j] > '~') {
+				j++
+			}
+			if j < len(s) {
+				j++
+			}
+			b.WriteString(s[i:j])
+			i = j
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		rw := runewidth.RuneWidth(r)
+		if vw+rw > w {
+			break
+		}
+		b.WriteRune(r)
+		vw += rw
+		i += size
+	}
+	return b.String()
+}
+
+func modalOverlay(base, box string, width int) string {
+	baseLines := strings.Split(base, "\n")
+	boxLines := strings.Split(box, "\n")
+
+	totalW := width
+	if totalW <= 0 {
+		for _, l := range baseLines {
+			if w := lipgloss.Width(l); w > totalW {
+				totalW = w
+			}
+		}
+	}
+
+	dim := lipgloss.NewStyle().Faint(true)
+	plain := make([]string, len(baseLines))
+	for i, l := range baseLines {
+		p := stripSGR(l)
+		if w := lipgloss.Width(p); w < totalW {
+			p += strings.Repeat(" ", totalW-w)
+		}
+		plain[i] = p
+	}
+
+	boxW := 0
+	for _, l := range boxLines {
+		if w := lipgloss.Width(l); w > boxW {
+			boxW = w
+		}
+	}
+	startRow := (len(plain) - len(boxLines)) / 2
+	if startRow < 0 {
+		startRow = 0
+	}
+	startCol := (totalW - boxW) / 2
+	if startCol < 0 {
+		startCol = 0
+	}
+
+	out := make([]string, len(plain))
+	for i, p := range plain {
+		out[i] = dim.Render(p)
+	}
+	for i, bl := range boxLines {
+		r := startRow + i
+		if r < 0 || r >= len(out) {
+			continue
+		}
+		left := truncateVisible(plain[r], startCol)
+		if w := lipgloss.Width(left); w < startCol {
+			left += strings.Repeat(" ", startCol-w)
+		}
+		right := ""
+		if rw := totalW - startCol - boxW; rw > 0 {
+			right = strings.Repeat(" ", rw)
+		}
+		out[r] = dim.Render(left) + bl + right
+	}
+	return strings.Join(out, "\n")
 }
 
 func (m *Model) showTrackInfo() {

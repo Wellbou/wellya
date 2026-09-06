@@ -53,6 +53,8 @@ var httpClient = http.Client{Transport: &http.Transport{
 	ResponseHeaderTimeout: _RESPONSE_TIMEOUT,
 }}
 
+var lyricsHttpClient = http.Client{Timeout: 15 * time.Second}
+
 func nowTimestamp() string {
 	return time.Now().Format(_TIMESTAMP_FORMAT)
 }
@@ -621,7 +623,7 @@ func (client *YaMusicClient) TrackLyricsRequest(trackId string) (LRCLyrics []Lyr
 	if err != nil {
 		return []LyricPair{}, err
 	}
-	LRCLyricsResponse, err := http.Get(lyrics.DownloadUrl)
+	LRCLyricsResponse, err := lyricsHttpClient.Get(lyrics.DownloadUrl)
 	if err != nil {
 		return []LyricPair{}, err
 	}

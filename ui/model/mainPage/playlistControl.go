@@ -552,11 +552,10 @@ func (m *Model) exportPlaylist() tea.Cmd {
 
 	downloadDir := config.Current.DownloadDir
 	if downloadDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
+		downloadDir = config.MusicDir()
+		if downloadDir == "" {
 			return m.ShowToast("export: no home dir")
 		}
-		downloadDir = filepath.Join(home, "Music", "wellya")
 	}
 
 	if err := os.MkdirAll(downloadDir, 0755); err != nil {

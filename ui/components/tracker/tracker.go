@@ -183,8 +183,8 @@ func (m *Model) View() string {
 	tracker := style.TrackProgressStyle.Render(m.progress.View())
 	tracker = lipgloss.JoinHorizontal(lipgloss.Top, playButton, tracker, volumeIndicator)
 
-	if m.showLyrics {
-		tracker = lipgloss.JoinVertical(lipgloss.Left, m.renderLyrics(), "", tracker)
+	if lyrics := m.renderLyrics(); lyrics != "" {
+		tracker = lipgloss.JoinVertical(lipgloss.Left, lyrics, "", tracker)
 	}
 
 	if m.showError && !config.Current.SuppressErrors {
@@ -411,7 +411,7 @@ func (m *Model) Width() int {
 
 func (m *Model) Height() int {
 	baseHeight := 4
-	if m.showLyrics {
+	if m.lyricsVisible() {
 		baseHeight += 4
 	}
 	if m.showError && !config.Current.SuppressErrors {
@@ -704,24 +704,25 @@ func (m *Model) volumeFadeTick() {
 	}
 }
 
+func (m *Model) lyricsVisible() bool {
+	return m.player != nil && m.showLyrics && m.track.LyricsInfo.HasAvailableSyncLyrics && len(m.lyrics) > 0
+}
+
 func (m *Model) renderLyrics() string {
+	if !m.lyricsVisible() {
+		return ""
+	}
+
 	currentLine := " "
 	nextLine := " "
 	previousLine := " "
 
-	if m.player != nil && m.showLyrics {
-		switch m.track.LyricsInfo.HasAvailableSyncLyrics {
-		case true:
-			for idx, line := range m.lyrics {
-				if line.Timestamp > int(m.Position().Milliseconds()-1000) {
-					previousLine = m.tryGetLyricsLine(idx - 2)
-					currentLine = m.lyricsBreak(m.tryGetLyricsLine(idx - 1))
-					nextLine = m.tryGetLyricsLine(idx)
-					break
-				}
-			}
-		case false:
-			currentLine = "This song doesn't have synced lyrics!"
+	for idx, line := range m.lyrics {
+		if line.Timestamp > int(m.Position().Milliseconds()-1000) {
+			previousLine = m.tryGetLyricsLine(idx - 2)
+			currentLine = m.lyricsBreak(m.tryGetLyricsLine(idx - 1))
+			nextLine = m.tryGetLyricsLine(idx)
+			break
 		}
 	}
 

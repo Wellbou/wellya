@@ -48,7 +48,7 @@ func newHelpMap() *helpKeyMap {
 		PageUp:             key.NewBinding(controls.TracksNextPage.Binding(), controls.TracksNextPage.Help("page up")),
 		PageDown:           key.NewBinding(controls.TracksPrevPage.Binding(), controls.TracksPrevPage.Help("page down")),
 		Play:               key.NewBinding(controls.Apply.Binding(), controls.Apply.Help("play")),
-		LikeUnlike:         key.NewBinding(controls.TracksLike.Binding(), controls.TracksLike.Help("like/unlike")),
+		LikeUnlike:         key.NewBinding(controls.TracksLike.Binding(), controls.TracksLike.Help("like selected")),
 		AddToPlaylist:      key.NewBinding(controls.TracksAddToPlaylist.Binding(), controls.TracksAddToPlaylist.Help("add to")),
 		RemoveFromPlaylist: key.NewBinding(controls.TracksRemoveFromPlaylist.Binding(), controls.TracksRemoveFromPlaylist.Help("remove")),
 		Search:             key.NewBinding(controls.TracksSearch.Binding(), controls.TracksSearch.Help("search")),
@@ -77,7 +77,8 @@ func newHelpMap() *helpKeyMap {
 }
 
 func (k helpKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.CursorUp, k.CursorDown, k.Play, k.LikeUnlike, k.JumpToPlaying, k.ArtistBrowse, k.TrackInfo, k.Dislike, k.RemoveFromQueue, k.Export, k.Upload, k.Stats, k.Sort, k.Filter, k.ShowHelp}
+	controls := config.Current.Controls
+	return []key.Binding{key.NewBinding(controls.KeysHelp.Binding(), controls.KeysHelp.Help("all hotkeys"))}
 }
 
 func (k helpKeyMap) FullHelp() [][]key.Binding {

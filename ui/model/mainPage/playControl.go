@@ -211,18 +211,36 @@ func (m *Model) nextTrack() {
 	}
 }
 
+type trackReadyMsg struct {
+	generation int
+	track      *api.Track
+	buffer     *stream.BufferedStream
+	lyrics     []api.LyricPair
+	bitrate    int
+	fromCache  bool
+}
+
+type trackFailedMsg struct {
+	generation int
+	reason     string
+}
+
 func (m *Model) playTrack(track *api.Track) {
 	m.tracker.Stop()
 	m.playGeneration++
 	generation := m.playGeneration
+	go m.loadTrack(track, generation)
+}
 
+func (m *Model) loadTrack(track *api.Track, generation int) {
 	var (
 		wg sync.WaitGroup
 
 		coverType  string
 		coverBytes []byte
 
-		lyrics []api.LyricPair
+		lyrics  []api.LyricPair
+		bitrate int
 
 		trackReader    io.ReadCloser
 		trackSize      int64
@@ -303,9 +321,9 @@ func (m *Model) playTrack(track *api.Track) {
 				lastErr = ierr
 				continue
 			}
-			bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
-			m.tracker.SetBitrate(int(bestTrackInfo.BbitrateInKbps))
-			tr2, ts2, derr := m.client.DownloadTrack(bestTrackInfo)
+		bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
+		bitrate = int(bestTrackInfo.BbitrateInKbps)
+		tr2, ts2, derr := m.client.DownloadTrack(bestTrackInfo)
 			if derr != nil {
 				log.Print(log.LVL_ERROR, "failed to download track [%s]: %s", track.Id, derr)
 				lastErr = derr
@@ -329,7 +347,7 @@ func (m *Model) playTrack(track *api.Track) {
 	}
 
 	if downloadErr != nil && trackReader == nil {
-		m.tracker.ShowError("track download")
+		m.Send(trackFailedMsg{generation: generation, reason: "track download"})
 		return
 	}
 
@@ -344,22 +362,14 @@ func (m *Model) playTrack(track *api.Track) {
 		log.Print(log.LVL_WARNING, "failed to create metadata file: %s", err)
 	}
 
-	if m.currentPlaylistIndex >= 0 {
-		currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
-		if currentPlaylist.Rotor {
-			ev := api.NewTrackFeedbackEvent(api.EV_TRACK_STARTED, track, 0)
-			go m.client.RotorSessionFeedback(currentPlaylist.SessionId, api.NewFeedback(currentPlaylist.SessionBatch, ev))
-			log.Print(log.LVL_INFO, "feedback event sended: "+ev.Type+" track: "+track.Title)
-		}
-	}
-
-	m.tracker.StartTrack(track, trackBuffer, lyrics)
-	m.indicateCurrentTrackPlaying(true)
-	m.mediaHandler.OnPlayback()
-
-	if m.client != nil {
-		go m.client.PlayTrack(track, trackFromCache)
-	}
+	m.Send(trackReadyMsg{
+		generation: generation,
+		track:      track,
+		buffer:     trackBuffer,
+		lyrics:     lyrics,
+		bitrate:    bitrate,
+		fromCache:  trackFromCache,
+	})
 }
 
 func (m *Model) playSelectedPlaylist(trackIndex int) {

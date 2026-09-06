@@ -1,6 +1,7 @@
 package help
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/wellbou/wellya/config"
@@ -50,6 +51,29 @@ func (m *Model) View() string {
 		return ""
 	}
 
+	return m.Box(m.Lines(), 72, m.height-4)
+}
+
+func (m *Model) Box(lines []string, maxW, maxH int) string {
+	if maxW < 40 {
+		maxW = 40
+	}
+	if maxH < 10 {
+		maxH = 10
+	}
+	if len(lines) > maxH {
+		keep := maxH - 1
+		if keep < 1 {
+			keep = 1
+		}
+		lines = append(lines[:keep], style.TrackVersionStyle.Render(fmt.Sprintf(" … (%d more lines — enlarge the terminal) ", len(lines)-keep)))
+	}
+
+	body := strings.Join(lines, "\n")
+	return style.DialogBoxStyle.Width(maxW).Render(body)
+}
+
+func (m *Model) Lines() []string {
 	c := config.Current.Controls
 	rewind := int(config.Current.RewindDuration)
 
@@ -125,7 +149,7 @@ func (m *Model) View() string {
 		}},
 		{"Search tab", []entry{
 			{keyName(c.Apply, "enter"), "Play selected track now"},
-			{keyName(c.TracksPlayNext, "n"), "Enqueue selected as next"},
+			{keyName(c.TracksPlayNext, "p"), "Enqueue selected as next"},
 			{keyName(c.CursorUp, "↑"), "Up in results"},
 			{keyName(c.CursorDown, "↓"), "Down in results"},
 			{keyName(c.Cancel, "esc"), "Exit search tab"},
@@ -154,14 +178,8 @@ func (m *Model) View() string {
 		}
 	}
 	lines = append(lines, "")
-	lines = append(lines, style.TrackVersionStyle.Render(" config: ~/.config/wellya/config.yaml  (yaml tags shown in README) "))
-
-	body := strings.Join(lines, "\n")
-	dialog := style.DialogBoxStyle.Width(68).Render(body)
-	ph := lipgloss.Height(dialog)
-	pw := lipgloss.Width(dialog)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-		lipgloss.NewStyle().Height(ph).Width(pw).Render(dialog))
+	lines = append(lines, style.TrackVersionStyle.Render(" config: ~/.config/wellya/config.yaml "))
+	return lines
 }
 
 func itoa(n int) string {

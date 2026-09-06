@@ -26,7 +26,8 @@ func newHelpMap() *helpKeyMap {
 }
 
 func (k helpKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.CursorUp, k.CursorDown}
+	controls := config.Current.Controls
+	return []key.Binding{key.NewBinding(controls.KeysHelp.Binding(), controls.KeysHelp.Help("all hotkeys"))}
 }
 
 func (k helpKeyMap) FullHelp() [][]key.Binding {
