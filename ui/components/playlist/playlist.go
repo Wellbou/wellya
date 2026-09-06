@@ -111,19 +111,27 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		case controls.ShowAllKeys.Contains(keypress):
 			m.help.ShowAll = !m.help.ShowAll
 		case controls.PlaylistsUp.Contains(keypress):
+			prev := m.list.Index()
 			m.list, cmd = m.list.Update(msg)
 
-			for len(m.list.Items()) > 0 && m.list.Index() > 0 && !m.list.SelectedItem().(*Item).Active {
+			for len(m.list.Items()) > 0 && m.list.Index() > 0 && !m.SelectedItem().Active {
 				m.list.CursorUp()
+			}
+			if len(m.list.Items()) > 0 && !m.SelectedItem().Active {
+				m.list.Select(prev)
 			}
 
 			cmds = append(cmds, cmd)
 			cmds = append(cmds, model.Cmd(CURSOR_UP))
 		case controls.PlaylistsDown.Contains(keypress):
+			prev := m.list.Index()
 			m.list, cmd = m.list.Update(msg)
 
-			for m.list.Index() < len(m.list.Items())-1 && !m.list.SelectedItem().(*Item).Active {
+			for m.list.Index() < len(m.list.Items())-1 && !m.SelectedItem().Active {
 				m.list.CursorDown()
+			}
+			if len(m.list.Items()) > 0 && !m.SelectedItem().Active {
+				m.list.Select(prev)
 			}
 
 			cmds = append(cmds, cmd)
@@ -188,7 +196,12 @@ func (m *Model) RemoveItem(index int) {
 }
 
 func (m *Model) SelectedItem() *Item {
-	return m.list.SelectedItem().(*Item)
+	if it := m.list.SelectedItem(); it != nil {
+		if pl, ok := it.(*Item); ok {
+			return pl
+		}
+	}
+	return &Item{}
 }
 
 func (m *Model) Index() int {

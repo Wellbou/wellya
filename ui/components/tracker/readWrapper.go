@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"io"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,43 +22,57 @@ type readWrapper struct {
 	trackBuffered  bool
 	trackDone      bool
 	lastUpdateTime time.Time
+	mux            sync.Mutex
 }
 
-func (w *readWrapper) NewReader(reader *stream.BufferedStream) {
-	var err error
+func (w *readWrapper) NewReader(reader *stream.BufferedStream) error {
+	decoder, err := mp3.NewDecoder(reader)
+	if err != nil {
+		log.Print(log.LVL_ERROR, "failed to create mp3 decoder: %s", err)
+		return err
+	}
 
+	w.mux.Lock()
+	defer w.mux.Unlock()
 	w.trackBuffered = false
 	w.trackDone = false
 	w.trackBuffer = reader
-	w.decoder, err = mp3.NewDecoder(w.trackBuffer)
-	if err != nil {
-		log.Print(log.LVL_ERROR, "failed to create mp3 decoder: %s", err)
-		return
-	}
-
+	w.decoder = decoder
 	w.lastUpdateTime = time.Now()
+	return nil
 }
 
 func (w *readWrapper) Close() {
-	if w.decoder != nil {
-		w.decoder.Seek(0, io.SeekStart)
-	}
+	w.mux.Lock()
+	decoder := w.decoder
+	buffer := w.trackBuffer
+	w.decoder = nil
+	w.trackBuffer = nil
+	w.mux.Unlock()
 
-	if w.trackBuffer != nil {
-		w.trackBuffer.Close()
+	if decoder != nil {
+		decoder.Seek(0, io.SeekStart)
+	}
+	if buffer != nil {
+		buffer.Close()
 	}
 }
 
 func (w *readWrapper) Read(dest []byte) (n int, err error) {
-	if w.trackBuffer == nil {
+	w.mux.Lock()
+	buffer := w.trackBuffer
+	decoder := w.decoder
+	w.mux.Unlock()
+
+	if buffer == nil || decoder == nil {
 		err = io.EOF
 		return
 	}
 
-	n, err = w.decoder.Read(dest)
+	n, err = decoder.Read(dest)
 	if err != nil && err != io.EOF {
-		if w.trackBuffer.Error() != nil {
-			err = w.trackBuffer.Error()
+		if buffer.Error() != nil {
+			err = buffer.Error()
 			log.Print(log.LVL_ERROR, "buffering error: %s", err)
 			go w.program.Send(STOP)
 			return
@@ -66,31 +81,50 @@ func (w *readWrapper) Read(dest []byte) (n int, err error) {
 		err = nil
 	}
 
-	if w.trackBuffer.IsBuffered() && !w.trackBuffered {
+	w.mux.Lock()
+	if buffer.IsBuffered() && !w.trackBuffered {
 		w.trackBuffered = true
 		go w.program.Send(BUFFERING_COMPLETE)
 	}
 
-	if w.trackBuffer.IsDone() && !w.trackDone {
+	if buffer.IsDone() && !w.trackDone {
 		w.trackDone = true
-		w.decoder.Seek(0, io.SeekStart)
-		w.trackBuffer.Close()
+		decoder.Seek(0, io.SeekStart)
+		buffer.Close()
 		go w.program.Send(NEXT)
 	} else if !w.trackDone && time.Since(w.lastUpdateTime) > _PROGRESS_UPDATE_PERIOD {
 		w.lastUpdateTime = time.Now()
-		fraction := ProgressControl(w.trackBuffer.Progress())
+		fraction := ProgressControl(buffer.Progress())
 		go w.program.Send(fraction)
 	}
+	w.mux.Unlock()
 
 	return
 }
 
+func (w *readWrapper) Buffer() *stream.BufferedStream {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+	return w.trackBuffer
+}
+
 func (w *readWrapper) Seek(offset int64, whence int) (int64, error) {
-	w.lastUpdateTime = time.Now()
-	return w.decoder.Seek(offset, whence)
+	w.mux.Lock()
+	decoder := w.decoder
+	if decoder != nil {
+		w.lastUpdateTime = time.Now()
+	}
+	w.mux.Unlock()
+	if decoder == nil {
+		return 0, io.EOF
+	}
+	return decoder.Seek(offset, whence)
 }
 
 func (w *readWrapper) Length() int64 {
+	if w.trackBuffer == nil {
+		return 0
+	}
 	return w.trackBuffer.Length()
 }
 

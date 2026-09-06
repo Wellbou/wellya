@@ -29,7 +29,7 @@ A valid Yandex Music account and an access token. The easiest way to get a token
 - Playlist export to M3U (`E`), local file import (`U`): MP3/M3U files or folders
 - Stats toast (`ctrl+g`), toast notifications, delete confirmations (`y`/`n`)
 - Full hotkey reference modal (`F1`), every key rebindable in config
-- Resilient API parsing: the client tolerates Yandex returning numbers as strings and back
+- Resilient API parsing: numeric and id fields tolerate Yandex returning numbers as strings and back (FlexString/FlexInt/FlexUint64)
 
 ### Installation
 
@@ -58,12 +58,12 @@ buffer-size-ms: 80
 rewind-duration-s: 5
 volume: 0.5
 volume-step: 0.05
-show-errors: false
+suppress-errors: false
 show-lyrics: false
 audio-quality: best # best/high/medium/low
 cache-tracks: likes # none/likes/all
 cache-dir: ""
-download-dir: "" # default ~/Music/wellya
+download-dir: "" # default: XDG music dir (~/Music or ~/Музыка)
 proxy: "" # proxy URL; falls back to HTTP_PROXY and HTTPS_PROXY
 search:
     artists: true

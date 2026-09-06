@@ -30,28 +30,34 @@ func migrateOldConfig() {
 		_ = os.WriteFile(filepath.Join(newDir, "config.yaml"), data, 0644)
 	}
 	if data, err := os.ReadFile(filepath.Join(oldDir, "token")); err == nil {
-		_ = os.WriteFile(filepath.Join(newDir, "token"), data, 0644)
+		_ = os.WriteFile(filepath.Join(newDir, "token"), data, 0600)
 	}
 }
 
 func InitialLoad() error {
 	migrateOldConfig()
-	var err error
 
-	Current, err = load()
+	conf, err := load()
 	if err != nil {
-		configDir, err := getDir()
-		if err != nil {
-			return err
-		}
+		if os.IsNotExist(err) {
+			conf = defaultConfig
+			configDir, derr := getDir()
+			if derr != nil {
+				return derr
+			}
 
-		if oldToken, err := os.ReadFile(filepath.Join(configDir, "token")); err == nil {
-			Current.Token = string(oldToken)
-		}
+			if oldToken, rerr := os.ReadFile(filepath.Join(configDir, "token")); rerr == nil {
+				conf.Token = string(oldToken)
+			}
 
-		save(Current)
+			Current = conf
+			return save(Current)
+		}
+		Current = conf
+		return err
 	}
 
+	Current = conf
 	return nil
 }
 
@@ -85,6 +91,28 @@ func load() (Config, error) {
 	err = yaml.Unmarshal(configContent, &newConfig)
 	if err != nil {
 		return defaultConfig, err
+	}
+
+	var raw map[string]any
+	if err := yaml.Unmarshal(configContent, &raw); err == nil {
+		if _, ok := raw["buffer-size-ms"]; !ok {
+			newConfig.BufferSize = defaultConfig.BufferSize
+		}
+		if _, ok := raw["rewind-duration-s"]; !ok {
+			newConfig.RewindDuration = defaultConfig.RewindDuration
+		}
+		if _, ok := raw["volume"]; !ok {
+			newConfig.Volume = defaultConfig.Volume
+		}
+		if _, ok := raw["volume-step"]; !ok {
+			newConfig.VolumeStep = defaultConfig.VolumeStep
+		}
+		if _, ok := raw["audio-quality"]; !ok {
+			newConfig.AudioQuality = defaultConfig.AudioQuality
+		}
+		if _, ok := raw["cache-tracks"]; !ok {
+			newConfig.CacheTracks = defaultConfig.CacheTracks
+		}
 	}
 
 	if newConfig.VolumeStep == 0 {
@@ -147,20 +175,31 @@ func save(conf Config) error {
 		return err
 	}
 
-	file, err := os.OpenFile(filepath.Join(configDir, "config.yaml"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	tmp, err := os.OpenFile(filepath.Join(configDir, "config.yaml.tmp"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
-	enc := yaml.NewEncoder(file)
+	enc := yaml.NewEncoder(tmp)
 	enc.SetIndent(4)
 	err = enc.Encode(conf)
+	cerr := enc.Close()
 	if err != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if cerr != nil {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return cerr
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
 		return err
 	}
 
-	return nil
+	return os.Rename(tmp.Name(), filepath.Join(configDir, "config.yaml"))
 }
 
 func Path() string {

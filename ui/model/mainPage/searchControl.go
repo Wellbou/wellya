@@ -42,6 +42,10 @@ func (m *Model) searchControl(msg search.Control) tea.Cmd {
 		if !ok {
 			return nil
 		}
+		if m.client == nil {
+			m.tracker.ShowError("not logged in")
+			return nil
+		}
 
 		m.searchGen++
 		gen := m.searchGen
@@ -64,6 +68,9 @@ func (m *Model) searchControl(msg search.Control) tea.Cmd {
 		return nil
 	case search.UPDATE_SUGGESTIONS:
 		input := m.searchDialog.InputValue()
+		if m.client == nil {
+			return nil
+		}
 		m.searchGen++
 		gen := m.searchGen
 		client := m.client
@@ -81,6 +88,9 @@ func (m *Model) searchControl(msg search.Control) tea.Cmd {
 		f = (f + 1) % 5
 		m.searchDialog.SetFilter(f)
 		if m.hasSearchResult {
+			if m.client == nil {
+				return nil
+			}
 			res := m.lastSearchResult
 			m.searchGen++
 			gen := m.searchGen
@@ -102,7 +112,11 @@ func makeSearchItems(client *api.YaMusicClient, playlists []*playlist.Item, res 
 	searchResIndex := len(playlists) + 2
 	for i, pl := range playlists {
 		if !pl.Active && !pl.Subitem && pl.Name == "search results:" {
-			playlists = playlists[:i-1]
+			if i > 0 {
+				playlists = playlists[:i-1]
+			} else {
+				playlists = playlists[:0]
+			}
 			searchResIndex = i + 1
 			break
 		}
@@ -176,7 +190,7 @@ func makeSearchItems(client *api.YaMusicClient, playlists []*playlist.Item, res 
 							Tracks:  albumWithTracks.Volumes[i],
 						})
 					}
-				} else {
+				} else if len(albumWithTracks.Volumes) > 0 {
 					playlists = append(playlists, &playlist.Item{
 						Name:    fmt.Sprintf("%s (%s)", albumWithTracks.Title, albumArtists),
 						Active:  true,
@@ -211,5 +225,11 @@ func makeSearchItems(client *api.YaMusicClient, playlists []*playlist.Item, res 
 		}
 	}
 
+	if searchResIndex < 0 {
+		searchResIndex = 0
+	}
+	if searchResIndex >= len(playlists) && len(playlists) > 0 {
+		searchResIndex = len(playlists) - 1
+	}
 	return playlists, searchResIndex
 }

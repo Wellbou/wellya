@@ -1,6 +1,7 @@
 package mainpage
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,8 @@ const (
 	_TRACK_FINISHED_THRESHOLD = 0.8
 )
 
+var errNoClient = errors.New("not logged in")
+
 func (m *Model) feedbackOnTrack(batch string) *api.RotorFeedback {
 	currTrack := m.tracker.CurrentTrack()
 	if currTrack == nil {
@@ -39,6 +42,9 @@ func (m *Model) feedbackOnTrack(batch string) *api.RotorFeedback {
 		evType = api.EV_TRACK_SKIPED
 	}
 	ev := api.NewTrackFeedbackEvent(evType, currTrack, m.tracker.Playtime().Seconds())
+	if ev == nil {
+		return nil
+	}
 	fb := api.NewFeedback(batch, ev)
 	log.Print(log.LVL_INFO, "feedback event sended: "+ev.Type+" track: "+currTrack.Title)
 	return fb
@@ -232,8 +238,7 @@ type errorToastMsg struct {
 
 func (m *Model) playTrack(track *api.Track) {
 	m.tracker.Stop()
-	m.playGeneration++
-	generation := m.playGeneration
+	generation := int(m.playGeneration.Add(1))
 	go m.loadTrack(m.client, track, generation)
 }
 
@@ -295,7 +300,7 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 		}
 	}()
 
-	if track.LyricsInfo.HasAvailableSyncLyrics {
+	if track.LyricsInfo.HasAvailableSyncLyrics && client != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -317,6 +322,10 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 			trackReader = tr
 			trackSize = ts
 			trackFromCache = true
+			return
+		}
+		if client == nil {
+			downloadErr = errNoClient
 			return
 		}
 		var lastErr error
@@ -345,7 +354,7 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 
 	wg.Wait()
 
-	if generation != m.playGeneration {
+	if int64(generation) != m.playGeneration.Load() {
 		if trackReader != nil {
 			trackReader.Close()
 		}
@@ -362,7 +371,7 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 	}
 
 	trackBuffer := stream.NewBufferedStream(trackReader, trackSize)
-	metadataFile, err := os.OpenFile(m.metadataFilePath(), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	metadataFile, err := os.OpenFile(m.metadataFilePath(string(track.Id)), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
 	if err == nil {
 		writeTrackID3Tag(metadataFile, track, coverBytes, coverType)
 		io.CopyN(metadataFile, trackBuffer, 32*1024)
@@ -403,14 +412,12 @@ func (m *Model) playSelectedPlaylist(trackIndex int) {
 		}
 	}
 
-	if selectedPlaylist.SelectedTrack < 0 || selectedPlaylist.SelectedTrack >= len(selectedPlaylist.Tracks) {
-		selectedPlaylist.SelectedTrack = trackIndex
-		if selectedPlaylist.SelectedTrack < 0 || selectedPlaylist.SelectedTrack >= len(selectedPlaylist.Tracks) {
-			m.Send(tracker.STOP)
-			return
-		}
+	if trackIndex < 0 || trackIndex >= len(selectedPlaylist.Tracks) {
+		m.Send(tracker.STOP)
+		return
 	}
-	trackToPlay := &selectedPlaylist.Tracks[selectedPlaylist.SelectedTrack]
+	selectedPlaylist.SelectedTrack = trackIndex
+	trackToPlay := &selectedPlaylist.Tracks[trackIndex]
 
 	if currentPlaylist := m.currentPlaylist(); currentPlaylist != nil {
 		if currentPlaylist.IsSame(selectedPlaylist) && selectedPlaylist.CurrentTrack == trackIndex && string(m.tracker.CurrentTrack().Id) == string(trackToPlay.Id) {

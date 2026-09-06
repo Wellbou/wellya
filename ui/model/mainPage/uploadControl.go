@@ -45,6 +45,9 @@ func (m *Model) uploadControl(msg input.Control) tea.Cmd {
 	if err != nil {
 		return m.ShowToast("upload: not found")
 	}
+	if !info.IsDir() && strings.ToLower(filepath.Ext(path)) != ".m3u" && !isAudioFile(path) {
+		return m.ShowToast("upload: not an audio file")
+	}
 	m.isUploading = true
 	go m.importPaths(path, info.IsDir())
 	return m.ShowToast("uploading...")
@@ -253,14 +256,14 @@ func buildLocalTrack(filePath string) (*api.Track, error) {
 		Albums: []api.Album{
 			{Title: album, Genre: genre},
 		},
-		DurationMs: durationMs,
-		FileSize:   int(fi.Size()),
+		DurationMs: api.FlexInt(durationMs),
+		FileSize:   api.FlexInt(fi.Size()),
 	}
 	if year != "" {
 		var y int
 		_, _ = fmt.Sscan(year, &y)
 		if y > 0 && len(track.Albums) > 0 {
-			track.Albums[0].Year = y
+			track.Albums[0].Year = api.FlexInt(y)
 		}
 	}
 

@@ -39,7 +39,7 @@ type likeDoneMsg struct {
 }
 
 func (m *Model) likeTrack(track *api.Track, pl *playlist.Item) tea.Cmd {
-	if track == nil {
+	if track == nil || m.client == nil {
 		return nil
 	}
 	id := string(track.Id)

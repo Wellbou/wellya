@@ -33,35 +33,44 @@ func ListTracks() ([]api.Track, error) {
 		if err != nil {
 			continue
 		}
-		defer tag.Close()
 
 		artistNames := strings.Split(tag.Artist(), ",")
 		artists := make([]api.Artist, len(artistNames))
 		for i := range artistNames {
-			artists[i].Name = artistNames[i]
+			artists[i].Name = strings.TrimSpace(artistNames[i])
 		}
 
-		stat, _ := entry.Info()
-		year, _ := strconv.Atoi(tag.Year())
+		title, albumTitle, genre, yearStr := tag.Title(), tag.Album(), tag.Genre(), tag.Year()
 		durationMs, _ := strconv.Atoi(tag.GetTextFrame("TLEN").Text)
+		tag.Close()
 
-		if durationMs > 0 {
-			tracks = append(tracks, api.Track{
-				Id:         api.FlexString(name[:len(name)-len(ext)]),
-				Title:      tag.Title(),
-				Available:  true,
-				FileSize:   int(stat.Size()),
-				DurationMs: int(durationMs),
-				Artists:    artists,
-				Albums: []api.Album{
-					{
-						Title: tag.Album(),
-						Genre: tag.Genre(),
-						Year:  year,
-					},
-				},
-			})
+		stat, statErr := entry.Info()
+		if statErr != nil || stat == nil {
+			continue
 		}
+		year, _ := strconv.Atoi(yearStr)
+		if durationMs <= 0 && stat.Size() > 0 {
+			durationMs = int(stat.Size() / 16)
+		}
+		if title == "" {
+			title = strings.TrimSuffix(name, ext)
+		}
+
+		tracks = append(tracks, api.Track{
+			Id:         api.FlexString(name[:len(name)-len(ext)]),
+			Title:      title,
+			Available:  true,
+			FileSize:   api.FlexInt(stat.Size()),
+			DurationMs: api.FlexInt(durationMs),
+			Artists:    artists,
+			Albums: []api.Album{
+				{
+					Title: albumTitle,
+					Genre: genre,
+					Year:  api.FlexInt(year),
+				},
+			},
+		})
 	}
 
 	return tracks, nil

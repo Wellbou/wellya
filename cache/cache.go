@@ -34,13 +34,21 @@ func getCacheDir() (string, error) {
 	return cacheDir, nil
 }
 
+func safeName(trackId string) string {
+	safe := filepath.Base(trackId)
+	if safe == "" || safe == "." || safe == ".." {
+		safe = "invalid"
+	}
+	return safe + ".mp3"
+}
+
 func Read(trackId string) (*os.File, int64, error) {
 	dir, err := getCacheDir()
 	if err != nil {
 		return nil, 0, err
 	}
 
-	file, err := os.Open(filepath.Join(dir, trackId+".mp3"))
+	file, err := os.Open(filepath.Join(dir, safeName(trackId)))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -59,7 +67,7 @@ func Write(trackId string) (*os.File, error) {
 		return nil, err
 	}
 
-	file, err := os.OpenFile(filepath.Join(dir, trackId+".mp3"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filepath.Join(dir, safeName(trackId)), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -73,5 +81,5 @@ func Remove(trackId string) error {
 		return err
 	}
 
-	return os.Remove(filepath.Join(dir, trackId+".mp3"))
+	return os.Remove(filepath.Join(dir, safeName(trackId)))
 }

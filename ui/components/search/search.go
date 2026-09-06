@@ -26,6 +26,7 @@ const (
 	UPDATE_SUGGESTIONS
 	TOGGLE_FILTER
 	PLAY_NEXT
+	QUIT
 )
 
 const (
@@ -113,6 +114,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		keypress := msg.String()
 
 		switch {
+		case controls.Quit.Contains(keypress):
+			cmds = append(cmds, model.Cmd(QUIT))
 		case controls.TracksPlayNext.Contains(keypress):
 			if m.pickSelectedTrack() != nil {
 				cmds = append(cmds, model.Cmd(PLAY_NEXT))

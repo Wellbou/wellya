@@ -1,12 +1,12 @@
 package help
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/wellbou/wellya/config"
 	"github.com/wellbou/wellya/ui/style"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -14,6 +14,7 @@ import (
 type Model struct {
 	width, height int
 	visible       bool
+	scroll        int
 }
 
 func New() *Model {
@@ -22,13 +23,42 @@ func New() *Model {
 
 func (m *Model) Init() tea.Cmd { return nil }
 
-func (m *Model) Show() { m.visible = true }
+func (m *Model) Show() { m.visible = true; m.scroll = 0 }
 func (m *Model) Hide() { m.visible = false }
 func (m *Model) Visible() bool { return m.visible }
 func (m *Model) SetSize(w, h int) { m.width = w; m.height = h }
 
 func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
-	if _, ok := msg.(tea.KeyMsg); ok {
+	km, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	controls := config.Current.Controls
+	keypress := km.String()
+	maxScroll := len(m.Lines()) - 1
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	switch {
+	case controls.CursorUp.Contains(keypress):
+		if m.scroll > 0 {
+			m.scroll--
+		}
+	case controls.CursorDown.Contains(keypress):
+		if m.scroll < maxScroll {
+			m.scroll++
+		}
+	case key.Matches(km, key.NewBinding(key.WithKeys("pgup"))):
+		m.scroll -= 10
+		if m.scroll < 0 {
+			m.scroll = 0
+		}
+	case key.Matches(km, key.NewBinding(key.WithKeys("pgdown"))):
+		m.scroll += 10
+		if m.scroll > maxScroll {
+			m.scroll = maxScroll
+		}
+	default:
 		m.visible = false
 	}
 	return m, nil
@@ -58,18 +88,29 @@ func (m *Model) Box(lines []string, maxW, maxH int) string {
 	if maxW < 40 {
 		maxW = 40
 	}
-	if maxH < 10 {
-		maxH = 10
+	if maxH < 6 {
+		maxH = 6
 	}
-	if len(lines) > maxH {
-		keep := maxH - 1
-		if keep < 1 {
-			keep = 1
-		}
-		lines = append(lines[:keep], style.TrackVersionStyle.Render(fmt.Sprintf(" … (%d more lines — enlarge the terminal) ", len(lines)-keep)))
+	footer := style.TrackVersionStyle.Render(" ↑↓/pgup/pgdn scroll · esc closes ")
+	viewH := maxH - 1
+	if viewH < 1 {
+		viewH = 1
 	}
+	start := m.scroll
+	if start > len(lines)-1 {
+		start = len(lines) - 1
+	}
+	if start < 0 {
+		start = 0
+	}
+	m.scroll = start
+	end := start + viewH
+	if end > len(lines) {
+		end = len(lines)
+	}
+	visible := lines[start:end]
 
-	body := strings.Join(lines, "\n")
+	body := strings.Join(append(visible, footer), "\n")
 	return style.DialogBoxStyle.Width(maxW).Render(body)
 }
 

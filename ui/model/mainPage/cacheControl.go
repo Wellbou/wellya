@@ -25,7 +25,7 @@ func (m *Model) cacheCurrentTrack() tea.Cmd {
 		return nil
 	}
 
-	metadataFile, err := os.OpenFile(m.metadataFilePath(), os.O_RDONLY, 0755)
+	metadataFile, err := os.OpenFile(m.metadataFilePath(string(currentTrack.Id)), os.O_RDONLY, 0755)
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to open cache file: %s", err)
 		m.tracker.ShowError("cache open")
@@ -53,10 +53,18 @@ func (m *Model) cacheCurrentTrack() tea.Cmd {
 		_ = os.Remove(cacheFile.Name())
 		return nil
 	}
-	trackBuffer.WriteTo(cacheFile)
+	if _, err := trackBuffer.WriteTo(cacheFile); err != nil {
+		cacheFile.Close()
+		_ = os.Remove(cacheFile.Name())
+		log.Print(log.LVL_ERROR, "failed to write cache file: %s", err)
+		return nil
+	}
 
 	m.cachedTracksMap[string(currentTrack.Id)] = true
 	cachePlaylist, index := m.playlists.GetFirst(playlist.LOCAL)
+	if cachePlaylist == nil {
+		return nil
+	}
 	cachePlaylist.AddTrack(currentTrack)
 	cmd := m.playlists.SetItem(index, cachePlaylist)
 
@@ -82,6 +90,9 @@ func (m *Model) removeCache(track *api.Track) tea.Cmd {
 	}
 
 	cachePlaylist, index := m.playlists.GetFirst(playlist.LOCAL)
+	if cachePlaylist == nil {
+		return nil
+	}
 	cachePlaylist.RemoveTrack(string(track.Id))
 
 	delete(m.cachedTracksMap, string(track.Id))
@@ -98,7 +109,7 @@ func (m *Model) removeCache(track *api.Track) tea.Cmd {
 func (m *Model) cacheAllLikedTracks() {
 	likedPlaylist, _ := m.playlists.GetFirst(playlist.LIKES)
 	if likedPlaylist == nil || len(likedPlaylist.Tracks) == 0 {
-		m.Send(trackFailedMsg{generation: m.playGeneration, reason: "no liked tracks to cache"})
+		m.Send(trackFailedMsg{generation: int(m.playGeneration.Load()), reason: "no liked tracks to cache"})
 		return
 	}
 
@@ -183,7 +194,11 @@ func downloadAndCacheTrack(client *api.YaMusicClient, track *api.Track) error {
 	defer cacheFile.Close()
 
 	writeTrackID3Tag(cacheFile, track, nil, "")
-	io.Copy(cacheFile, trackReader)
+	if _, err := io.Copy(cacheFile, trackReader); err != nil {
+		cacheFile.Close()
+		_ = cache.Remove(string(track.Id))
+		return err
+	}
 
 	return nil
 }
@@ -236,6 +251,10 @@ func (m *Model) downloadCurrentTrack() tea.Cmd {
 
 	if _, err := os.Stat(filePath); err == nil {
 		m.tracker.ShowError("already downloaded")
+		return nil
+	}
+	if m.client == nil {
+		m.tracker.ShowError("not logged in")
 		return nil
 	}
 

@@ -66,6 +66,7 @@ type Model struct {
 	track      api.Track
 	lyrics     []api.LyricPair
 	progress   progress.Model
+	progressPct float64
 	volumeBar  progress.Model
 	help       help.Model
 	helpMap    *helpKeyMap
@@ -180,7 +181,7 @@ func (m *Model) View() string {
 	}
 
 	m.progress.Width = m.width - volumeIndicatorWidth - 9
-	tracker := style.TrackProgressStyle.Render(m.progress.View())
+	tracker := style.TrackProgressStyle.Render(m.progress.ViewAs(m.progressPct))
 	tracker = lipgloss.JoinHorizontal(lipgloss.Top, playButton, tracker, volumeIndicator)
 
 	if lyrics := m.renderLyrics(); lyrics != "" {
@@ -208,7 +209,7 @@ func (m *Model) View() string {
 		trackTitle = lipgloss.JoinHorizontal(lipgloss.Top, trackTitle, trackVersion)
 
 		durTotal := time.Millisecond * time.Duration(m.track.DurationMs)
-		durEllapsed := time.Millisecond * time.Duration(float64(m.track.DurationMs)*m.progress.Percent())
+		durEllapsed := time.Millisecond * time.Duration(float64(m.track.DurationMs)*m.progressPct)
 		trackTime := style.TrackVersionStyle.Render(fmt.Sprintf("%02d:%02d/%02d:%02d",
 			int(durEllapsed.Minutes()),
 			int(durEllapsed.Seconds())%60,
@@ -318,7 +319,7 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 
 		case controls.PlayerCache.Contains(keypress):
 			if !m.IsStoped() {
-				m.trackWrapper.trackBuffer.BufferAll()
+				m.trackWrapper.Buffer().BufferAll()
 				cmds = append(cmds, model.Cmd(CACHE_TRACK))
 			}
 
@@ -387,14 +388,7 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 	// track progress update
 	case ProgressControl:
 		m.volumeFadeTick()
-		cmd = m.progress.SetPercent(msg.Value())
-		cmds = append(cmds, cmd)
-
-	case progress.FrameMsg:
-		var progressModel tea.Model
-		progressModel, cmd = m.progress.Update(msg)
-		m.progress = progressModel.(progress.Model)
-		cmds = append(cmds, cmd)
+		m.progressPct = float64(msg.Value())
 	}
 
 	return m, tea.Batch(cmds...)
@@ -421,7 +415,7 @@ func (m *Model) Height() int {
 }
 
 func (m *Model) Progress() float64 {
-	return m.progress.Percent()
+	return m.progressPct
 }
 
 func (m *Model) Position() time.Duration {
@@ -473,7 +467,7 @@ func (m *Model) Volume() float64 {
 	return m.volume
 }
 
-func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyrics []api.LyricPair) {
+func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyrics []api.LyricPair) bool {
 	m.showError = false
 	m.currentBitrate = 0
 	if m.muted {
@@ -488,7 +482,11 @@ func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyri
 	}
 
 	m.track = *track
-	m.trackWrapper.NewReader(reader)
+	if err := m.trackWrapper.NewReader(reader); err != nil {
+		reader.Close()
+		m.ShowError("track decode")
+		return false
+	}
 	m.player = m.playerContext.NewPlayer(m.trackWrapper)
 	m.player.SetVolume(0)
 	m.player.Play()
@@ -496,6 +494,7 @@ func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyri
 	m.paused = false
 	m.playtime = 0
 	m.playStarted = time.Now()
+	return true
 }
 
 func (m *Model) Stop() {
@@ -508,10 +507,6 @@ func (m *Model) Stop() {
 		m.player.Pause()
 	}
 
-	if m.trackWrapper.trackBuffer.Error() != nil {
-		m.ShowError("track buffering")
-	}
-
 	m.trackWrapper.Close()
 	m.player.Close()
 	m.player = nil
@@ -520,11 +515,11 @@ func (m *Model) Stop() {
 }
 
 func (m *Model) IsPlaying() bool {
-	return m.player != nil && m.trackWrapper.trackBuffer != nil && m.player.IsPlaying()
+	return m.player != nil && m.trackWrapper.Buffer() != nil && m.player.IsPlaying()
 }
 
 func (m *Model) IsStoped() bool {
-	return m.player == nil || m.trackWrapper.trackBuffer == nil
+	return m.player == nil || m.trackWrapper.Buffer() == nil
 }
 
 func (m *Model) CurrentTrack() *api.Track {
@@ -532,7 +527,7 @@ func (m *Model) CurrentTrack() *api.Track {
 }
 
 func (m *Model) Play() {
-	if m.player == nil || m.trackWrapper.trackBuffer == nil {
+	if m.player == nil || m.trackWrapper.Buffer() == nil {
 		return
 	}
 	if m.player.IsPlaying() {
@@ -547,11 +542,14 @@ func (m *Model) Play() {
 }
 
 func (m *Model) Pause() {
-	if m.player == nil || m.trackWrapper.trackBuffer == nil {
+	if m.player == nil || m.trackWrapper.Buffer() == nil {
 		return
 	}
 	if !m.player.IsPlaying() {
 		return
+	}
+	if m.player != nil {
+		m.player.Pause()
 	}
 	m.playtime += time.Since(m.playStarted)
 	m.paused = true
@@ -571,7 +569,7 @@ func (m *Model) Rewind(amount time.Duration) tea.Cmd {
 
 	// align position by 4 bytes
 	currentPos += byteOffset
-	currentPos += currentPos % 4
+	currentPos -= currentPos % 4
 
 	if currentPos <= 0 {
 		m.player.Seek(0, io.SeekStart)
@@ -581,7 +579,8 @@ func (m *Model) Rewind(amount time.Duration) tea.Cmd {
 		m.player.Seek(currentPos, io.SeekStart)
 	}
 
-	return m.progress.SetPercent(m.trackWrapper.Progress())
+	m.progressPct = m.trackWrapper.Progress()
+	return nil
 }
 
 func (m *Model) SetPos(pos time.Duration) {
@@ -594,12 +593,12 @@ func (m *Model) SetPos(pos time.Duration) {
 	byteOffset := int64(math.Round((float64(m.trackWrapper.Length()) / float64(m.track.DurationMs)) * float64(posMs)))
 
 	// align position by 4 bytes
-	byteOffset += byteOffset % 4
+	byteOffset -= byteOffset % 4
 	m.player.Seek(byteOffset, io.SeekStart)
 }
 
 func (m *Model) TrackBuffer() *stream.BufferedStream {
-	return m.trackWrapper.trackBuffer
+	return m.trackWrapper.Buffer()
 }
 
 func (m *Model) Playtime() time.Duration {
@@ -684,12 +683,11 @@ func (m *Model) volumeFadeTick() {
 		return
 	}
 
-	var targetVolume float64
 	if m.paused {
-		targetVolume = 0
-	} else {
-		targetVolume = m.volume
+		return
 	}
+
+	var targetVolume float64 = m.volume
 
 	currVol := m.player.Volume()
 	if currVol >= targetVolume+m.volumeIncremet {
@@ -698,9 +696,6 @@ func (m *Model) volumeFadeTick() {
 		m.player.SetVolume(currVol + m.volumeIncremet/2)
 	} else if currVol != targetVolume {
 		m.player.SetVolume(targetVolume)
-		if m.paused {
-			m.player.Pause()
-		}
 	}
 }
 

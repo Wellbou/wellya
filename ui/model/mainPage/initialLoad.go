@@ -191,6 +191,7 @@ func (m *Model) applyInitialLoad(d initialLoadDoneMsg) {
 		m.indicateCurrentTrackPlaying(m.tracker.IsPlaying())
 		m.tracklist.Shufflable = (selectedPlaylist.Kind != playlist.NONE && selectedPlaylist.Kind != playlist.MYWAVE && selectedPlaylist.Kind != playlist.STATION && selectedPlaylist.Kind != playlist.HISTORY && len(selectedPlaylist.Tracks) > 0)
 	}
+	m.restoreSession()
 }
 
 func loadMyWave(client *api.YaMusicClient, wg *sync.WaitGroup, block *menuBlock) {
@@ -379,7 +380,7 @@ func loadUserPlaylists(client *api.YaMusicClient, wg *sync.WaitGroup, block *men
 			block.items = append(block.items, &playlist.Item{
 				Name:     pl.Title,
 				Kind: uint64(pl.Kind),
-				Revision: pl.Revision,
+				Revision: int(pl.Revision),
 				Active:   true,
 				Subitem:  true,
 				Tracks:   tracks,

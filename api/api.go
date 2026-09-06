@@ -99,7 +99,8 @@ func proccessRequest[RetT any](req *http.Request) (result RetT, invInfo InvocInf
 		err = respBody
 		invInfo.ReqId = respBody.RequestId
 	default:
-		err = fmt.Errorf("unhandled status %s", resp.Status)
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		err = fmt.Errorf("unhandled status %s: %s", resp.Status, strings.TrimSpace(string(snippet)))
 	}
 
 	return
@@ -195,7 +196,11 @@ func downloadRequest(token, reqUrl, mimeType string) (body io.ReadCloser, conten
 }
 
 func createTrackUrl(info fullDownloadInfo, codec string) string {
-	trackUrl := "XGRlBW9FXlekgbPrRHuSiA" + info.Path[1:] + info.S
+	path := info.Path
+	if len(path) > 0 && path[0] == '/' {
+		path = path[1:]
+	}
+	trackUrl := "XGRlBW9FXlekgbPrRHuSiA" + path + info.S
 	hashSum := md5.Sum([]byte(trackUrl))
 	hashedUrl := hex.EncodeToString(hashSum[:])
 	return "https://" + info.Host + "/get-" + codec + "/" + hashedUrl + "/" + info.Ts + info.Path
@@ -235,7 +240,8 @@ func Token(username, password string) (token string, err error) {
 	if err != nil {
 		return
 	}
-	resp, err := http.Post(servPath, "application/x-www-form-urlencoded", strings.NewReader(params.Encode()))
+	oauthClient := http.Client{Timeout: 15 * time.Second}
+	resp, err := oauthClient.Post(servPath, "application/x-www-form-urlencoded", strings.NewReader(params.Encode()))
 	if err != nil {
 		return
 	}
@@ -268,7 +274,7 @@ func ShareTrackLink(track *Track) string {
 }
 
 func TrackCoverLink(track *Track, size int) string {
-	if len(track.CoverUri) < 2 {
+	if track == nil || !strings.HasSuffix(track.CoverUri, "%%") {
 		return ""
 	}
 	return fmt.Sprintf("https://%s%dx%d", track.CoverUri[:len(track.CoverUri)-2], size, size)
@@ -291,6 +297,9 @@ func DownloadTrackCover(dst io.Writer, track *Track, size int) (string, error) {
 	}
 
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("cover request: error code %d", resp.StatusCode)
+	}
 	_, err = io.Copy(dst, resp.Body)
 	return resp.Header.Get("Content-Type"), err
 }
@@ -386,8 +395,8 @@ func (client *YaMusicClient) PlaylistTracks(kind uint64, userId uint64, mixed bo
 		return
 	}
 
-	tracks = make([]Track, 0, playlists[0].TrackCount)
-	for i := 0; i < playlists[0].TrackCount; i++ {
+	tracks = make([]Track, 0, len(playlists[0].Tracks))
+	for i := range playlists[0].Tracks {
 		trk := playlists[0].Tracks[i].Track
 		trk.PlayCount = playlists[0].Tracks[i].PlayCount
 		tracks = append(tracks, trk)
@@ -453,6 +462,9 @@ func (client *YaMusicClient) RotorNewSession(id StationId) (tracks StationTracks
 }
 
 func (client *YaMusicClient) RotorSessionFeedback(sessionId string, feedback *RotorFeedback) (err error) {
+	if feedback == nil || client == nil {
+		return nil
+	}
 	_, _, err = postRequestJson[interface{}](client.token,
 		fmt.Sprintf("/rotor/session/%s/feedback", sessionId),
 		nil,
@@ -598,7 +610,9 @@ func (client *YaMusicClient) Search(request string, searchType SearchType) (resu
 	}
 	results, _, err = getRequest[SearchResult](client.token, "/search", url.Values{"text": {request}, "page": {"0"}, "type": {string(searchType)}})
 	for i := range results.Tracks.Results {
-		results.Tracks.Results[i].Id = results.Tracks.Results[i].RealId
+		if results.Tracks.Results[i].RealId != "" {
+			results.Tracks.Results[i].Id = results.Tracks.Results[i].RealId
+		}
 	}
 	return
 }
@@ -623,9 +637,16 @@ func (client *YaMusicClient) TrackLyricsRequest(trackId string) (LRCLyrics []Lyr
 	if err != nil {
 		return []LyricPair{}, err
 	}
+	if lyrics.DownloadUrl == "" {
+		return []LyricPair{}, errors.New("lyrics not available")
+	}
 	LRCLyricsResponse, err := lyricsHttpClient.Get(lyrics.DownloadUrl)
 	if err != nil {
 		return []LyricPair{}, err
+	}
+	if LRCLyricsResponse.StatusCode != http.StatusOK {
+		LRCLyricsResponse.Body.Close()
+		return []LyricPair{}, fmt.Errorf("lyrics request: error code %d", LRCLyricsResponse.StatusCode)
 	}
 	defer LRCLyricsResponse.Body.Close()
 	data, err := io.ReadAll(LRCLyricsResponse.Body)
@@ -645,27 +666,45 @@ func parseLRCText(lrcContent string) []LyricPair {
 			continue
 		}
 
-		parts := strings.SplitN(line, "]", 2)
-		if len(parts) != 2 {
-			continue
+		rest := line
+		var stamps []int
+		for strings.HasPrefix(rest, "[") {
+			end := strings.Index(rest, "]")
+			if end < 0 {
+				break
+			}
+			timeStr := rest[1:end]
+			rest = rest[end+1:]
+			timeParts := strings.Split(timeStr, ":")
+			if len(timeParts) != 2 {
+				continue
+			}
+
+			minutes, err := strconv.Atoi(timeParts[0])
+			if err != nil {
+				continue
+			}
+			secondsParts := strings.SplitN(timeParts[1], ".", 2)
+			seconds, err := strconv.Atoi(secondsParts[0])
+			if err != nil {
+				continue
+			}
+			millis := 0
+			if len(secondsParts) > 1 {
+				frac := secondsParts[1]
+				for len(frac) < 3 {
+					frac += "0"
+				}
+				millis, _ = strconv.Atoi(frac[:3])
+			}
+
+			stamps = append(stamps, minutes*60*1000+seconds*1000+millis)
 		}
 
-		timeStr := strings.Trim(parts[0], "[]")
-		timeParts := strings.Split(timeStr, ":")
-		if len(timeParts) != 2 {
-			continue
+		text := strings.TrimSpace(rest)
+		for _, totalMs := range stamps {
+			lyrics = append(lyrics, LyricPair{totalMs, text})
 		}
-
-		minutes, _ := strconv.Atoi(timeParts[0])
-		secondsParts := strings.Split(timeParts[1], ".")
-		seconds, _ := strconv.Atoi(secondsParts[0])
-		millis := 0
-		if len(secondsParts) > 1 {
-			millis, _ = strconv.Atoi(secondsParts[1])
-		}
-
-		totalMs := minutes*60*1000 + seconds*1000 + millis
-		lyrics = append(lyrics, LyricPair{totalMs, strings.TrimSpace(parts[1])})
 	}
 
 	return lyrics

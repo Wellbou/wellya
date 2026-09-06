@@ -54,6 +54,10 @@ func (k *Key) UnmarshalYAML(val *yaml.Node) error {
 func prepareToProccess(key string) []string {
 	names := make([]string, 0)
 	for _, part := range strings.Split(key, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
 		if part == "backspace" {
 			// contains the substring "space", which must not be substituted.
 			names = append(names, "backspace")

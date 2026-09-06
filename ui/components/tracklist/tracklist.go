@@ -19,6 +19,7 @@ type Control uint
 
 const (
 	PLAY Control = iota
+	QUIT
 	CURSOR_UP
 	CURSOR_DOWN
 	PAGE_UP
@@ -123,9 +124,16 @@ func (m *Model) View() string {
 	m.list.SetHeight(m.height - helpHeight - filterHeight - 4)
 
 	listView := m.list.View()
-	if lipgloss.Height(listView) <= m.list.Height() {
-		lastLine := strings.LastIndex(listView[:len(listView)-1], "\n")
-		listView = listView[:lastLine] + "\n" + listView[lastLine:]
+	if len(listView) > 0 {
+		if lipgloss.Height(listView) <= m.list.Height() {
+			tail := listView
+			if len(tail) > 0 {
+				tail = tail[:len(tail)-1]
+			}
+			if lastLine := strings.LastIndex(tail, "\n"); lastLine >= 0 {
+				listView = listView[:lastLine] + "\n" + listView[lastLine:]
+			}
+		}
 	}
 
 	header := lipgloss.JoinHorizontal(lipgloss.Top, style.TrackVersionStyle.Render(" Filter: "), filterView)
@@ -179,6 +187,10 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		keypress := msg.String()
 
 		if m.filterInput.Focused() {
+			if controls.Quit.Contains(keypress) {
+				m.filterInput.Blur()
+				return m, model.Cmd(QUIT)
+			}
 			switch keypress {
 			case "esc":
 				m.filterInput.SetValue("")
@@ -200,12 +212,6 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			m.filterInput.Focus()
 			return m, textinput.Blink
 		}
-		if len(keypress) == 1 && keypress[0] >= 32 && keypress[0] <= 126 && !controls.ShowAllKeys.Contains(keypress) && !isReservedKey(controls, keypress) {
-			m.filterInput.Focus()
-			m.filterInput.SetValue(m.filterInput.Value() + keypress)
-			m.applyFilter()
-			return m, textinput.Blink
-		}
 
 		m.list, cmd = m.list.Update(msg)
 		cmds = append(cmds, cmd)
@@ -220,27 +226,31 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		case controls.CursorDown.Contains(keypress):
 			cmds = append(cmds, model.Cmd(CURSOR_DOWN))
 		case controls.TracksNextPage.Contains(keypress):
-			pageSize := m.list.Height() / 3
-			if pageSize < 1 {
-				pageSize = 1
+			if len(m.list.Items()) > 0 {
+				pageSize := m.list.Height() / 3
+				if pageSize < 1 {
+					pageSize = 1
+				}
+				newIdx := m.list.Index() - pageSize
+				if newIdx < 0 {
+					newIdx = 0
+				}
+				m.list.Select(newIdx)
+				cmds = append(cmds, model.Cmd(PAGE_UP))
 			}
-			newIdx := m.list.Index() - pageSize
-			if newIdx < 0 {
-				newIdx = 0
-			}
-			m.list.Select(newIdx)
-			cmds = append(cmds, model.Cmd(PAGE_UP))
 		case controls.TracksPrevPage.Contains(keypress):
-			pageSize := m.list.Height() / 3
-			if pageSize < 1 {
-				pageSize = 1
+			if len(m.list.Items()) > 0 {
+				pageSize := m.list.Height() / 3
+				if pageSize < 1 {
+					pageSize = 1
+				}
+				newIdx := m.list.Index() + pageSize
+				if newIdx >= len(m.list.Items()) {
+					newIdx = len(m.list.Items()) - 1
+				}
+				m.list.Select(newIdx)
+				cmds = append(cmds, model.Cmd(PAGE_DOWN))
 			}
-			newIdx := m.list.Index() + pageSize
-			if newIdx >= len(m.list.Items()) {
-				newIdx = len(m.list.Items()) - 1
-			}
-			m.list.Select(newIdx)
-			cmds = append(cmds, model.Cmd(PAGE_DOWN))
 		case controls.TracksSearch.Contains(keypress):
 			cmds = append(cmds, model.Cmd(SEARCH))
 		case controls.TracksShuffle.Contains(keypress):
@@ -321,8 +331,11 @@ func (m *Model) RemoveItem(index int) {
 }
 
 func (m *Model) RemoveItemAfter(index int) tea.Cmd {
-	items := m.list.Items()[:index+1]
-	return m.list.SetItems(items)
+	items := m.list.Items()
+	if index < 0 || index >= len(items) {
+		return nil
+	}
+	return m.list.SetItems(items[:index+1])
 }
 
 func (m *Model) SetItem(index int, item Item) tea.Cmd {
@@ -373,40 +386,3 @@ func (m *Model) Height() int {
 	return m.height
 }
 
-func isReservedKey(controls *config.Controls, keypress string) bool {
-	switch {
-	case controls.Quit.Contains(keypress),
-		controls.Apply.Contains(keypress),
-		controls.Cancel.Contains(keypress),
-		controls.CursorUp.Contains(keypress),
-		controls.CursorDown.Contains(keypress),
-		controls.Reload.Contains(keypress),
-		controls.PlaylistsUp.Contains(keypress),
-		controls.PlaylistsDown.Contains(keypress),
-		controls.PlaylistsRename.Contains(keypress),
-		controls.PlaylistsHide.Contains(keypress),
-		controls.PlaylistsRadio.Contains(keypress),
-		controls.PlayerPause.Contains(keypress),
-		controls.PlayerNext.Contains(keypress),
-		controls.PlayerPrevious.Contains(keypress),
-		controls.PlayerRewindForward.Contains(keypress),
-		controls.PlayerRewindBackward.Contains(keypress),
-		controls.PlayerLike.Contains(keypress),
-		controls.PlayerCache.Contains(keypress),
-		controls.PlayerVolUp.Contains(keypress),
-		controls.PlayerVolDown.Contains(keypress),
-		controls.PlayerToggleLyrics.Contains(keypress),
-		controls.PlayerHide.Contains(keypress),
-		controls.PlayerCacheAllLiked.Contains(keypress),
-		controls.PlayerDownload.Contains(keypress),
-		controls.PlayerMute.Contains(keypress),
-		controls.PlayerQualityCycle.Contains(keypress),
-		controls.PlayerRepeatMode.Contains(keypress),
-		controls.PlayerSleepTimer.Contains(keypress),
-		controls.PlayerDislike.Contains(keypress),
-		controls.KeysHelp.Contains(keypress),
-		controls.TracksSearchTab.Contains(keypress):
-		return true
-	}
-	return false
-}

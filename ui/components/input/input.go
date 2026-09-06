@@ -15,6 +15,7 @@ type Control uint
 const (
 	APPLY Control = iota
 	CANCEL
+	QUIT
 )
 
 type Model struct {
@@ -65,6 +66,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		keypress := msg.String()
 
 		switch {
+		case controls.Quit.Contains(keypress):
+			cmds = append(cmds, model.Cmd(QUIT))
 		case controls.Apply.Contains(keypress):
 			cmds = append(cmds, model.Cmd(APPLY))
 			m.value = m.input.Value()

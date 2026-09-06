@@ -19,6 +19,9 @@ func MusicDir() string {
 			}
 			v := strings.Trim(strings.SplitN(line, "=", 2)[1], `"`)
 			v = strings.ReplaceAll(v, "$HOME", home)
+			if v == home || v == home+"/" {
+				continue
+			}
 			if st, err := os.Stat(v); err == nil && st.IsDir() {
 				return v
 			}

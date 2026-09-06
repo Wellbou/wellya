@@ -41,6 +41,9 @@ func NewBufferedStream(source io.ReadCloser, totalSize int64) *BufferedStream {
 }
 
 func (h *BufferedStream) Length() int64 {
+	if h == nil {
+		return 0
+	}
 	return int64(h.totalSize)
 }
 
@@ -83,6 +86,7 @@ func (h *BufferedStream) Read(dest []byte) (n int, err error) {
 				h.finishLocked()
 				return 0, io.EOF
 			}
+			h.readIndex = readBufLen
 		}
 		newFrame := make([]byte, destLen)
 		n, err = io.ReadFull(h.source, newFrame)
@@ -185,6 +189,9 @@ func (h *BufferedStream) Progress() float64 {
 	}
 	h.mux.Lock()
 	defer h.mux.Unlock()
+	if h.totalSize <= 0 {
+		return 0
+	}
 	return float64(h.readIndex) / float64(h.totalSize)
 }
 
@@ -194,10 +201,19 @@ func (h *BufferedStream) BufferingProgress() float64 {
 	}
 	h.mux.Lock()
 	defer h.mux.Unlock()
+	if h.totalSize <= 0 {
+		if h.buffered {
+			return 1
+		}
+		return 0
+	}
 	return float64(len(h.readBuffer)) / float64(h.totalSize)
 }
 
 func (h *BufferedStream) BufferAll() {
+	if h == nil {
+		return
+	}
 	h.mux.Lock()
 	defer h.mux.Unlock()
 
@@ -246,7 +262,7 @@ func (h *BufferedStream) bufferFrames(size int64) {
 	for {
 		h.mux.Lock()
 
-		if h.buffered || h.totalSize <= int64(len(h.readBuffer)) {
+		if h.buffered || (h.totalSize > 0 && h.totalSize <= int64(len(h.readBuffer))) {
 			h.stopBuffering()
 			h.mux.Unlock()
 			return

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -64,8 +65,12 @@ type Model struct {
 
 	currentPlaylistIndex int
 	currentIsRadio       bool
-	playGeneration       int
+	playGeneration       atomic.Int64
+	pendingResumePos     int64
 	searchGen            int
+	lastPlaylistIdx      int
+	lastRadioIdx         int
+	wasRadioTab          bool
 	likedTracksMap       map[string]bool
 	cachedTracksMap      map[string]bool
 	historyTracks        []api.Track
@@ -160,16 +165,40 @@ func (m *Model) realTrackIndex(pl *playlist.Item) int {
 	return -1
 }
 
+func firstActiveIndex(items []*playlist.Item) int {
+	for i := range items {
+		if items[i].Active {
+			return i
+		}
+	}
+	return 0
+}
+
 func (m *Model) toggleRadioTab() {
+	if !m.isRadioTab {
+		m.lastPlaylistIdx = m.playlists.Index()
+		m.wasRadioTab = false
+	} else {
+		m.lastRadioIdx = m.radioPlaylists.Index()
+	}
 	m.isRadioTab = !m.isRadioTab
 	if m.isRadioTab {
 		m.isSearchTab = false
-		m.radioPlaylists.Select(0)
-		if len(m.radioPlaylists.Items()) > 0 {
+		idx := m.lastRadioIdx
+		items := m.radioPlaylists.Items()
+		if idx < 0 || idx >= len(items) || !items[idx].Active {
+			idx = firstActiveIndex(items)
+		}
+		m.lastRadioIdx = idx
+		m.radioPlaylists.Select(idx)
+		if len(items) > 0 {
 			m.displayPlaylist(m.radioPlaylists.SelectedItem())
 		}
 	} else {
-		m.playlists.Select(0)
+		m.playlists.Select(m.lastPlaylistIdx)
+		if len(m.playlists.Items()) > 0 && !m.playlists.SelectedItem().Active {
+			m.playlists.Select(firstActiveIndex(m.playlists.Items()))
+		}
 		if len(m.playlists.Items()) > 0 {
 			m.displayPlaylist(m.playlists.SelectedItem())
 		}
@@ -178,11 +207,15 @@ func (m *Model) toggleRadioTab() {
 
 func (m *Model) toggleSearchTab() {
 	m.isSearchTab = !m.isSearchTab
-	m.isRadioTab = false
 	if m.isSearchTab {
+		m.wasRadioTab = m.isRadioTab
+		m.isRadioTab = false
 		m.searchDialog.SetSize(m.width-style.SidePanelWidth-4, m.height-6)
 	} else {
 		m.searchDialog.Reset()
+		if m.wasRadioTab {
+			m.toggleRadioTab()
+		}
 	}
 }
 
@@ -209,6 +242,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		cmds []tea.Cmd
 	)
 
+	if m.answerMediaQueries(message) {
+		return m, nil
+	}
+
 	switch msg := message.(type) {
 	case initialLoadDoneMsg:
 		m.isLoading = false
@@ -226,7 +263,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case trackReadyMsg:
-		if msg.generation != m.playGeneration {
+		if int64(msg.generation) != m.playGeneration.Load() {
 			if msg.buffer != nil {
 				msg.buffer.Close()
 			}
@@ -235,21 +272,31 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.currentPlaylistIndex >= 0 && m.currentPlaylistIndex < len(m.currentPlaylists().Items()) {
 			currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
 			if currentPlaylist.Rotor {
-				ev := api.NewTrackFeedbackEvent(api.EV_TRACK_STARTED, msg.track, 0)
-				go m.client.RotorSessionFeedback(currentPlaylist.SessionId, api.NewFeedback(currentPlaylist.SessionBatch, ev))
-				log.Print(log.LVL_INFO, "feedback event sended: "+ev.Type+" track: "+msg.track.Title)
+				if ev := api.NewTrackFeedbackEvent(api.EV_TRACK_STARTED, msg.track, 0); ev != nil {
+					go m.client.RotorSessionFeedback(currentPlaylist.SessionId, api.NewFeedback(currentPlaylist.SessionBatch, ev))
+					log.Print(log.LVL_INFO, "feedback event sended: "+ev.Type+" track: "+msg.track.Title)
+				}
 			}
 		}
 		m.tracker.SetBitrate(msg.bitrate)
-		m.tracker.StartTrack(msg.track, msg.buffer, msg.lyrics)
+		if !m.tracker.StartTrack(msg.track, msg.buffer, msg.lyrics) {
+			break
+		}
+		if m.pendingResumePos > 0 {
+			pos := m.pendingResumePos
+			m.pendingResumePos = 0
+			m.tracker.SetPos(time.Duration(pos) * time.Millisecond)
+			m.tracker.Pause()
+		}
 		m.indicateCurrentTrackPlaying(true)
 		m.mediaHandler.OnPlayback()
 		if m.client != nil {
 			go m.client.PlayTrack(msg.track, msg.fromCache)
 		}
+		m.saveSession()
 
 	case trackFailedMsg:
-		if msg.generation != m.playGeneration {
+		if int64(msg.generation) != m.playGeneration.Load() {
 			break
 		}
 		m.tracker.ShowError(msg.reason)
@@ -303,6 +350,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastSearchResult = msg.res
 		m.hasSearchResult = true
+		if m.isRadioTab {
+			m.toggleRadioTab()
+		}
 		cmds = append(cmds, m.playlists.SetItems(msg.items))
 		m.playlists.Select(msg.index)
 		m.Send(playlist.CURSOR_DOWN)
@@ -328,6 +378,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.searchDialog.SetResults(msg.tracks)
+
+	case tea.QuitMsg:
+		m.saveSession()
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.resize(msg.Width, msg.Height)
@@ -365,7 +419,15 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case controls.Quit.Contains(keypress):
+			m.saveSession()
 			return m, tea.Quit
+		case m.helpDialog.Visible():
+			m.helpDialog, cmd = m.helpDialog.Update(message)
+			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
+		case m.isSearchTab:
+			m.searchDialog, cmd = m.searchDialog.Update(message)
+			cmds = append(cmds, cmd)
 		case m.isSearchActive || m.isAddPlaylistActive:
 			m.searchDialog, cmd = m.searchDialog.Update(message)
 			cmds = append(cmds, cmd)
@@ -464,6 +526,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	// tracklist control update
 	case tracklist.Control:
 		switch msg {
+		case tracklist.QUIT:
+			m.saveSession()
+			return m, tea.Quit
 		case tracklist.PLAY:
 			playlistItem := m.activePlaylists().SelectedItem()
 			if !playlistItem.Active {
@@ -617,6 +682,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	// search control update
 	case search.Control:
+		if msg == search.QUIT {
+			m.saveSession()
+			return m, tea.Quit
+		}
 		if m.isSearchTab {
 			cmd = m.searchTabControl(msg)
 			cmds = append(cmds, cmd)
@@ -630,6 +699,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	// input dialog control update
 	case input.Control:
+		if msg == input.QUIT {
+			m.saveSession()
+			return m, tea.Quit
+		}
 		if m.isUploadActive {
 			m.isUploadActive = false
 			cmd = m.uploadControl(msg)
@@ -775,118 +848,7 @@ func (m *Model) resize(width, height int) {
 	m.inputDialog.SetWidth(searchWidth)
 }
 
-func (m *Model) mediaHandle() {
-	for msg := range m.mediaHandler.Message() {
-		switch msg.Type {
-		case handler.MSG_NEXT:
-			m.Send(tracker.NEXT)
-		case handler.MSG_PREVIOUS:
-			m.Send(tracker.PREV)
-		case handler.MSG_PLAY:
-			m.tracker.Play()
-			m.Send(tracker.PLAY)
-		case handler.MSG_PAUSE:
-			m.tracker.Pause()
-			m.Send(tracker.PAUSE)
-		case handler.MSG_PLAYPAUSE:
-			if m.tracker.IsPlaying() {
-				m.tracker.Pause()
-				m.Send(tracker.PAUSE)
-			} else {
-				m.tracker.Play()
-				m.Send(tracker.PLAY)
-			}
-		case handler.MSG_STOP:
-			m.Send(tracker.STOP)
-		case handler.MSG_SEEK:
-			offset, ok := msg.Arg.(time.Duration)
-			if ok {
-				m.tracker.Rewind(offset)
-			}
-		case handler.MSG_SETPOS:
-			pos, ok := msg.Arg.(time.Duration)
-			if ok {
-				m.tracker.SetPos(pos)
-			}
 
-		case handler.MSG_SET_SHUFFLE:
-			val, ok := msg.Arg.(bool)
-			if !ok || !val {
-				break
-			}
-			if m.currentPlaylistIndex < 0 || m.currentPlaylistIndex >= len(m.currentPlaylists().Items()) {
-				break
-			}
-			currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
-			if len(currentPlaylist.Tracks) == 0 {
-				break
-			}
-			if currentPlaylist.Kind >= playlist.LIKES {
-				cmd := m.shufflePlaylist(currentPlaylist)
-				m.Send(func() tea.Cmd {
-					return cmd
-				})
-			}
-		case handler.MSG_SET_VOLUME:
-			vol, ok := msg.Arg.(float64)
-			if ok {
-				m.tracker.SetVolume(vol)
-			}
-
-		case handler.MSG_GET_PLAYBACKSTATUS:
-			var state handler.PlaybackState
-			if m.tracker.IsPlaying() {
-				state = handler.STATE_PLAYING
-			} else {
-				if m.tracker.IsStoped() {
-					state = handler.STATE_STOPPED
-				} else {
-					state = handler.STATE_PAUSED
-				}
-			}
-			m.mediaHandler.SendAnswer(state)
-		case handler.MSG_GET_SHUFFLE:
-			m.mediaHandler.SendAnswer(false)
-		case handler.MSG_GET_METADATA:
-			if m.tracker.IsStoped() {
-				m.mediaHandler.SendAnswer(handler.TrackMetadata{})
-				break
-			}
-			track := m.tracker.CurrentTrack()
-			artists := make([]string, 0, len(track.Artists))
-			for i := range track.Artists {
-				artists = append(artists, track.Artists[i].Name)
-			}
-			albumArtists := make([]string, 0)
-			var albumName string
-			genre := make([]string, 0)
-			if len(track.Albums) != 0 {
-				for i := range track.Albums[0].Artists {
-					albumArtists = append(albumArtists, track.Albums[0].Artists[i].Name)
-				}
-				albumName = track.Albums[0].Title
-				genre = append(genre, track.Albums[0].Genre)
-			}
-
-			md := handler.TrackMetadata{
-				TrackId: string(track.Id),
-				Length:       time.Duration(track.DurationMs) * time.Millisecond,
-				CoverUrl:     m.coverFilePath(track),
-				AlbumName:    albumName,
-				AlbumArtists: albumArtists,
-				Artists:      artists,
-				Genre:        genre,
-				Title:        track.Title,
-				Url:          api.ShareTrackLink(track),
-			}
-			m.mediaHandler.SendAnswer(md)
-		case handler.MSG_GET_VOLUME:
-			m.mediaHandler.SendAnswer(m.tracker.Volume())
-		case handler.MSG_GET_POSITION:
-			m.mediaHandler.SendAnswer(m.tracker.Position())
-		}
-	}
-}
 
 func (m *Model) coverFilePath(track *api.Track) string {
 	tempDir := filepath.Join(os.TempDir(), config.DirName)
@@ -896,12 +858,21 @@ func (m *Model) coverFilePath(track *api.Track) string {
 	return filepath.Join(tempDir, string(track.Id)+".jpg")
 }
 
-func (m *Model) metadataFilePath() string {
+func (m *Model) metadataFilePath(trackId string) string {
 	tempDir := filepath.Join(os.TempDir(), config.DirName)
 	if os.MkdirAll(tempDir, 0755) != nil {
 		return ""
 	}
-	return filepath.Join(tempDir, "metadata.mp3")
+	safe := strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == 0 {
+			return '_'
+		}
+		return r
+	}, trackId)
+	if safe == "" {
+		safe = "unknown"
+	}
+	return filepath.Join(tempDir, "metadata-"+safe+".mp3")
 }
 
 func (m *Model) confirmView() string {
@@ -1077,6 +1048,10 @@ func (m *Model) searchTabControl(msg search.Control) tea.Cmd {
 	case search.TYPING:
 		req := m.searchDialog.InputValue()
 		if req == "" {
+			return nil
+		}
+		if m.client == nil {
+			m.tracker.ShowError("not logged in")
 			return nil
 		}
 		m.searchGen++

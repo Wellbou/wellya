@@ -12,7 +12,7 @@ type FlexString string
 
 func (fs *FlexString) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
+	if len(data) == 0 || string(data) == "null" {
 		*fs = ""
 		return nil
 	}
@@ -77,7 +77,7 @@ type FlexUint64 uint64
 
 func (fu *FlexUint64) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
+	if len(data) == 0 || string(data) == "null" {
 		*fu = 0
 		return nil
 	}
@@ -102,11 +102,19 @@ func (fu *FlexUint64) UnmarshalJSON(data []byte) error {
 	}
 	var i int64
 	if err := json.Unmarshal(data, &i); err == nil {
+		if i < 0 {
+			*fu = 0
+			return nil
+		}
 		*fu = FlexUint64(uint64(i))
 		return nil
 	}
 	var f float64
 	if err := json.Unmarshal(data, &f); err == nil {
+		if f < 0 {
+			*fu = 0
+			return nil
+		}
 		*fu = FlexUint64(uint64(f))
 		return nil
 	}
@@ -139,7 +147,7 @@ func (e BadRequestError) Error() string {
 type UnauthorizedError struct {
 	Timestamp time.Time   `json:"timestamp"`
 	Path      string      `json:"path"`
-	Status    float64     `json:"status"`
+	Status    FlexInt     `json:"status"`
 	Name      string      `json:"error"`
 	Message   interface{} `json:"message"`
 	RequestId string      `json:"requestId"`
@@ -222,13 +230,13 @@ type Album struct {
 	Available   bool       `json:"available"`
 	Type        string     `json:"type"`
 	MetaType    string     `json:"metaType"`
-	Year        int        `json:"year"`
+	Year        FlexInt    `json:"year"`
 	ReleaseDate string     `json:"releaseDate"`
 	CoverUri    string     `json:"coverUri"`
 	OgImage     string     `json:"ogImage"`
 	Genre       string     `json:"genre"`
 	Recent      bool       `json:"recent"`
-	TrackCount  int        `json:"trackCount"`
+	TrackCount  FlexInt    `json:"trackCount"`
 	Volumes     [][]Track  `json:"volumes"`
 	Artists     []Artist   `json:"artists"`
 	Labels      []Label    `json:"labels"`
@@ -261,7 +269,7 @@ type Track struct {
 	} `json:"fade"`
 
 	Major struct {
-		Id   int    `json:"id"`
+		Id   FlexInt `json:"id"`
 		Name string `json:"name"`
 	} `json:"major"`
 
@@ -269,11 +277,11 @@ type Track struct {
 
 	Albums []Album `json:"albums"`
 
-	FileSize         int    `json:"fileSize"`
+	FileSize         FlexInt `json:"fileSize"`
 	StorageDir       string `json:"storageDir"`
-	DurationMs       int    `json:"durationMs"`
+	DurationMs       FlexInt `json:"durationMs"`
 	RememberPosition bool   `json:"rememberPosition"`
-	PlayCount        int    `json:"playCount"`
+	PlayCount        FlexInt `json:"playCount"`
 }
 
 type Playlist struct {
@@ -288,8 +296,8 @@ type Playlist struct {
 	Created              string `json:"created"`
 	Modified             string `json:"modified"`
 	Visibility           string `json:"visibility"`
-	LikesCount           int    `json:"likesCount"`
-	Revision             int    `json:"revision"`
+	LikesCount           FlexInt `json:"likesCount"`
+	Revision             FlexInt `json:"revision"`
 
 	Tags    []Tag  `json:"tags"`
 	Owner   Owner  `json:"owner"`
@@ -299,10 +307,10 @@ type Playlist struct {
 	BackgroundColor string `json:"backgroundColor"`
 	TextColor       string `json:"textColor"`
 
-	TrackCount int `json:"trackCount"`
+	TrackCount FlexInt `json:"trackCount"`
 	Tracks     []struct {
 		Id        FlexString `json:"id"`
-		PlayCount int       `json:"playCount"`
+		PlayCount FlexInt   `json:"playCount"`
 		Recent    bool      `json:"recent"`
 		Timestamp string    `json:"timestamp"`
 		Track     Track     `json:"track"`
@@ -432,8 +440,8 @@ type LikeTrackInfo struct {
 
 type LikesDesc struct {
 	Library struct {
-		Uid       uint64          `json:"uid"`
-		Revisions int             `json:"revisions"`
+		Uid       FlexUint64      `json:"uid"`
+		Revisions FlexInt         `json:"revisions"`
 		Tracks    []LikeTrackInfo `json:"tracks"`
 	} `json:"library"`
 }
@@ -486,9 +494,9 @@ type SearchResult struct {
 
 	Albums struct {
 		Type    string  `json:"type"`
-		Total   int     `json:"total"`
-		PerPage int     `json:"perPage"`
-		Order   int     `json:"order"`
+		Total   FlexInt `json:"total"`
+		PerPage FlexInt `json:"perPage"`
+		Order   FlexInt `json:"order"`
 		Results []Album `json:"results"`
 	} `json:"albums"`
 
@@ -510,15 +518,15 @@ type SearchResult struct {
 
 	Tracks struct {
 		Type    string  `json:"type"`
-		Total   int     `json:"total"`
-		PerPage int     `json:"perPage"`
-		Order   int     `json:"order"`
+		Total   FlexInt `json:"total"`
+		PerPage FlexInt `json:"perPage"`
+		Order   FlexInt `json:"order"`
 		Results []Track `json:"results"`
 	} `json:"tracks"`
 
 	Type              string `json:"type"`
-	Page              int    `json:"page"`
-	PerPage           int    `json:"perPage"`
+	Page              FlexInt `json:"page"`
+	PerPage           FlexInt `json:"perPage"`
 	MisspellCorrected bool   `json:"misspellCorrected"`
 	MisspellOriginal  string `json:"misspellOriginal"`
 	Nocorrect         bool   `json:"nocorrect"`
