@@ -11,9 +11,11 @@ import (
 const (
 	_BUFFERING_AMOUNT = 32 * 1024
 	_BUFFERING_PERIOD = 100 * time.Millisecond
+	_BUFFERING_MAX    = 512 << 20
 )
 
 var errOutOfSize = errors.New("position is out of data size")
+var errBufferTooLarge = errors.New("buffer exceeded size limit")
 
 type BufferedStream struct {
 	source      io.ReadCloser
@@ -262,7 +264,10 @@ func (h *BufferedStream) bufferFrames(size int64) {
 	for {
 		h.mux.Lock()
 
-		if h.buffered || (h.totalSize > 0 && h.totalSize <= int64(len(h.readBuffer))) {
+		if h.buffered || (h.totalSize > 0 && h.totalSize <= int64(len(h.readBuffer))) || int64(len(h.readBuffer)) >= _BUFFERING_MAX {
+			if int64(len(h.readBuffer)) >= _BUFFERING_MAX {
+				h.lastError = errBufferTooLarge
+			}
 			h.stopBuffering()
 			h.mux.Unlock()
 			return
