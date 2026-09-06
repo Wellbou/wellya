@@ -3,7 +3,7 @@
 [![GitHub License](https://img.shields.io/github/license/wellbou/wellya)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/wellbou/wellya)](https://goreportcard.com/report/github.com/wellbou/wellya)
 
-> **Фиолетовый форк** [yamusic-tui](https://github.com/DECE2183/yamusic-tui) в стиле экосистемы [wellutils](https://github.com/wellbou/wellutils) — `wellutils`, `wellya`, `wellsensors` единый бренд.
+> **Форк** [yamusic-tui](https://github.com/DECE2183/yamusic-tui) в стиле экосистемы [wellutils](https://github.com/wellbou/wellutils) - `wellutils`, `wellya`, `wellsensors` единый бренд.
 
 An unofficial Yandex Music terminal client with purple theme and extended features.<br>
 Based on [yandex-music-open-api](https://github.com/acherkashin/yandex-music-open-api) and `Dece2183/yamusic-tui`.
@@ -25,8 +25,8 @@ Valid Yandex Music account + access token. Самый простой спосо�
 
 ### Что нового в форке vs оригинал
 
-- [x] Фиолетовая тема `#AB47BC` / `#2C1A4A` / `#4A148C` — в тон `wellutils --fetch`
-- [x] **Удалить из очереди, не из любимых** — `X` (локально, без API `UnlikeTrack`)
+- [x] Фиолетовая тема `#AB47BC` / `#2C1A4A` / `#4A148C`
+- [x] **Удалить из очереди** — `X` (локально, без API `UnlikeTrack`)
 - [x] **M3U экспорт** — `E` → `~/Music/wellya/<playlist>.m3u` (`#EXTM3U` + `#EXTINF` + `https://music.yandex.ru/...`)
 - [x] **Загрузка локальных файлов** — `U` → ввод пути `~/Music/file.mp3` или директории, парсинг ID3, кэш в `~/.cache/wellya`, добавление в `Cached tracks` (поддержка UGC/OWN — Yamaha хранит как `trackSource:"UGC"`)
 - [x] Версия в футтере `dev-queue-m3u`
