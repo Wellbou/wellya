@@ -45,7 +45,7 @@ func (m *Model) feedbackOnTrack(batch string) *api.RotorFeedback {
 }
 
 func (m *Model) rotateTracks(currentPlaylist *playlist.Item) {
-	if !currentPlaylist.Rotor {
+	if !currentPlaylist.Rotor || m.client == nil {
 		return
 	}
 
@@ -65,6 +65,9 @@ func (m *Model) rotateTracks(currentPlaylist *playlist.Item) {
 
 	if m.activePlaylists().SelectedItem().IsSame(currentPlaylist) {
 		tackItems := m.tracklist.Items()
+		if len(tackItems) == 0 {
+			return
+		}
 		lastTrack := tackItems[len(tackItems)-1]
 		lastTrack.IsSuggestion = false
 		m.tracklist.SetItem(len(tackItems)-1, lastTrack)
@@ -104,17 +107,16 @@ func (m *Model) loadStationTracks(pl *playlist.Item) {
 }
 
 func (m *Model) prevTrack() {
-	if m.currentPlaylistIndex < 0 {
+	currentPlaylist := m.currentPlaylist()
+	if currentPlaylist == nil {
 		return
 	}
-
-	currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
 
 	if currentPlaylist.Rotor && m.tracker.IsPlaying() {
 		go m.client.RotorSessionFeedback(currentPlaylist.SessionId, m.feedbackOnTrack(currentPlaylist.SessionBatch))
 	}
 
-	if len(currentPlaylist.Tracks) == 0 || currentPlaylist.CurrentTrack == 0 {
+	if len(currentPlaylist.Tracks) == 0 || currentPlaylist.CurrentTrack <= 0 {
 		m.Send(tracker.STOP)
 		return
 	}
@@ -145,11 +147,10 @@ func (m *Model) prevTrack() {
 }
 
 func (m *Model) nextTrack() {
-	if m.currentPlaylistIndex < 0 {
+	currentPlaylist := m.currentPlaylist()
+	if currentPlaylist == nil {
 		return
 	}
-
-	currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
 
 	if currentPlaylist.Rotor && m.tracker.IsPlaying() {
 		go m.client.RotorSessionFeedback(currentPlaylist.SessionId, m.feedbackOnTrack(currentPlaylist.SessionBatch))
@@ -225,22 +226,27 @@ type trackFailedMsg struct {
 	reason     string
 }
 
+type errorToastMsg struct {
+	reason string
+}
+
 func (m *Model) playTrack(track *api.Track) {
 	m.tracker.Stop()
 	m.playGeneration++
 	generation := m.playGeneration
-	go m.loadTrack(track, generation)
+	go m.loadTrack(m.client, track, generation)
 }
 
-func (m *Model) loadTrack(track *api.Track, generation int) {
+func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generation int) {
 	var (
 		wg sync.WaitGroup
 
 		coverType  string
 		coverBytes []byte
 
-		lyrics  []api.LyricPair
-		bitrate int
+	lyrics   []api.LyricPair
+	lyricErr error
+	bitrate  int
 
 		trackReader    io.ReadCloser
 		trackSize      int64
@@ -293,10 +299,10 @@ func (m *Model) loadTrack(track *api.Track, generation int) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			lyr, lerr := m.client.TrackLyricsRequest(string(track.Id))
+			lyr, lerr := client.TrackLyricsRequest(string(track.Id))
 			if lerr != nil {
 				log.Print(log.LVL_WARNING, "failed to obtain track [%s] lyrics: %s", track.Id, lerr)
-				m.tracker.ShowError("track lyrics")
+				lyricErr = lerr
 				return
 			}
 			lyrics = lyr
@@ -315,7 +321,7 @@ func (m *Model) loadTrack(track *api.Track, generation int) {
 		}
 		var lastErr error
 		for i := 0; i < _TRACK_DOWNLOAD_TRIES; i++ {
-			trackInfos, ierr := m.client.TrackDownloadInfo(string(track.Id))
+			trackInfos, ierr := client.TrackDownloadInfo(string(track.Id))
 			if ierr != nil {
 				log.Print(log.LVL_ERROR, "failed to obtain track [%s] info: %s", track.Id, ierr)
 				lastErr = ierr
@@ -323,7 +329,7 @@ func (m *Model) loadTrack(track *api.Track, generation int) {
 			}
 		bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
 		bitrate = int(bestTrackInfo.BbitrateInKbps)
-		tr2, ts2, derr := m.client.DownloadTrack(bestTrackInfo)
+		tr2, ts2, derr := client.DownloadTrack(bestTrackInfo)
 			if derr != nil {
 				log.Print(log.LVL_ERROR, "failed to download track [%s]: %s", track.Id, derr)
 				lastErr = derr
@@ -349,6 +355,10 @@ func (m *Model) loadTrack(track *api.Track, generation int) {
 	if downloadErr != nil && trackReader == nil {
 		m.Send(trackFailedMsg{generation: generation, reason: "track download"})
 		return
+	}
+
+	if lyricErr != nil {
+		m.Send(errorToastMsg{reason: "track lyrics"})
 	}
 
 	trackBuffer := stream.NewBufferedStream(trackReader, trackSize)
@@ -393,10 +403,16 @@ func (m *Model) playSelectedPlaylist(trackIndex int) {
 		}
 	}
 
+	if selectedPlaylist.SelectedTrack < 0 || selectedPlaylist.SelectedTrack >= len(selectedPlaylist.Tracks) {
+		selectedPlaylist.SelectedTrack = trackIndex
+		if selectedPlaylist.SelectedTrack < 0 || selectedPlaylist.SelectedTrack >= len(selectedPlaylist.Tracks) {
+			m.Send(tracker.STOP)
+			return
+		}
+	}
 	trackToPlay := &selectedPlaylist.Tracks[selectedPlaylist.SelectedTrack]
 
-	if m.currentPlaylistIndex >= 0 {
-		currentPlaylist := m.currentPlaylists().Items()[m.currentPlaylistIndex]
+	if currentPlaylist := m.currentPlaylist(); currentPlaylist != nil {
 		if currentPlaylist.IsSame(selectedPlaylist) && selectedPlaylist.CurrentTrack == trackIndex && string(m.tracker.CurrentTrack().Id) == string(trackToPlay.Id) {
 			if m.tracker.IsPlaying() {
 				m.tracker.Pause()

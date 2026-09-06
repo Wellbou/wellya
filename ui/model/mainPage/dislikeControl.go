@@ -9,9 +9,7 @@ import (
 
 func (m *Model) dislikePlayingTrack() tea.Cmd {
 	var currentPlaylist *playlist.Item
-	if m.currentPlaylistIndex >= 0 {
-		currentPlaylist = m.playlists.Items()[m.currentPlaylistIndex]
-	}
+	currentPlaylist = m.currentPlaylist()
 
 	track := m.tracker.CurrentTrack()
 	return m.dislikeTrack(track, currentPlaylist)
@@ -22,12 +20,15 @@ func (m *Model) dislikeSelectedTrack() tea.Cmd {
 		return nil
 	}
 
-	selectedPlaylist := m.playlists.SelectedItem()
+	selectedPlaylist := m.activePlaylists().SelectedItem()
 	if len(selectedPlaylist.Tracks) == 0 {
 		return nil
 	}
 
 	track := m.tracklist.SelectedItem().Track
+	if track == nil {
+		return nil
+	}
 	return m.dislikeTrack(track, selectedPlaylist)
 }
 

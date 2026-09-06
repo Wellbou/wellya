@@ -17,9 +17,17 @@ import (
 	"github.com/wellbou/wellya/ui/components/playlist"
 )
 
+type uploadDoneMsg struct {
+	tracks []*api.Track
+	err    string
+}
+
 func (m *Model) uploadControl(msg input.Control) tea.Cmd {
 	if msg != input.APPLY {
 		return nil
+	}
+	if m.isUploading {
+		return m.ShowToast("upload already in progress")
 	}
 	path := strings.TrimSpace(m.inputDialog.Value())
 	if path == "" {
@@ -37,78 +45,139 @@ func (m *Model) uploadControl(msg input.Control) tea.Cmd {
 	if err != nil {
 		return m.ShowToast("upload: not found")
 	}
-	var files []string
-	if info.IsDir() {
-		_ = filepath.Walk(path, func(p string, fi os.FileInfo, err error) error {
-			if err != nil {
-				return nil
-			}
-			if fi.IsDir() {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(p))
-			if ext == ".mp3" || ext == ".flac" || ext == ".ogg" || ext == ".m4a" || ext == ".wav" || ext == ".m3u" {
-				files = append(files, p)
-			}
-			return nil
-		})
-		if len(files) == 0 {
-			return m.ShowToast("upload: no audio files")
-		}
-	} else {
-		if strings.ToLower(filepath.Ext(path)) == ".m3u" {
-			n, err := m.importM3U(path)
-			if err != nil {
-				return m.ShowToast("m3u import: " + err.Error())
-			}
-			if n == 0 {
-				return m.ShowToast("m3u: nothing imported")
-			}
-			m.displayPlaylist(m.playlists.SelectedItem())
-			return m.ShowToast(fmt.Sprintf("m3u imported %d track(s)", n))
-		}
-		files = []string{path}
+	m.isUploading = true
+	go m.importPaths(path, info.IsDir())
+	return m.ShowToast("uploading...")
+}
+
+func (m *Model) importPaths(path string, isDir bool) {
+	files := collectAudioFiles(path, isDir)
+	if len(files) == 0 {
+		m.Send(uploadDoneMsg{err: "upload: no audio files"})
+		return
 	}
-	count := 0
-	m3uCount := 0
+	var tracks []*api.Track
+	seen := make(map[string]bool)
 	for _, f := range files {
-		if strings.ToLower(filepath.Ext(f)) == ".m3u" {
-			n, err := m.importM3U(f)
-			if err != nil {
-				log.Print(log.LVL_WARNING, "m3u import failed %s: %s", f, err)
-				continue
-			}
-			m3uCount += n
-			continue
-		}
-		if err := m.importLocalFile(f); err != nil {
+		track, err := buildLocalTrack(f)
+		if err != nil {
 			log.Print(log.LVL_WARNING, "upload failed %s: %s", f, err)
 			continue
 		}
+		id := string(track.Id)
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		tracks = append(tracks, track)
+	}
+	m.Send(uploadDoneMsg{tracks: tracks})
+}
+
+func (m *Model) applyUploadedTracks(tracks []*api.Track) tea.Cmd {
+	count := 0
+	localPl, idx := m.playlists.GetFirst(playlist.LOCAL)
+	if localPl == nil {
+		return m.ShowToast("upload: no local playlist")
+	}
+	for _, track := range tracks {
+		id := string(track.Id)
+		if m.cachedTracksMap[id] {
+			continue
+		}
+		m.cachedTracksMap[id] = true
+		localPl.AddTrack(track)
 		count++
 	}
-	count += m3uCount
+	m.playlists.SetItem(idx, localPl)
+	if m.playlists.SelectedItem().Kind == playlist.LOCAL {
+		m.displayPlaylist(localPl)
+	} else {
+		m.displayPlaylist(m.playlists.SelectedItem())
+	}
 	if count == 0 {
 		return m.ShowToast("upload: nothing imported")
-	}
-	m.displayPlaylist(m.playlists.SelectedItem())
-	if m.playlists.SelectedItem().Kind == playlist.LOCAL {
-		m.displayPlaylist(m.playlists.SelectedItem())
 	}
 	return m.ShowToast(fmt.Sprintf("uploaded %d track(s)", count))
 }
 
-func (m *Model) importLocalFile(filePath string) error {
+func isAudioFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp3", ".flac", ".ogg", ".m4a", ".wav":
+		return true
+	}
+	return false
+}
+
+func collectAudioFiles(path string, isDir bool) []string {
+	if !isDir {
+		if strings.ToLower(filepath.Ext(path)) == ".m3u" {
+			return collectM3UFiles(path)
+		}
+		return []string{path}
+	}
+	var files []string
+	_ = filepath.Walk(path, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return nil
+		}
+		if strings.ToLower(filepath.Ext(p)) == ".m3u" {
+			files = append(files, collectM3UFiles(p)...)
+			return nil
+		}
+		if isAudioFile(p) {
+			files = append(files, p)
+		}
+		return nil
+	})
+	return files
+}
+
+func collectM3UFiles(m3uPath string) []string {
+	data, err := os.ReadFile(m3uPath)
+	if err != nil {
+		log.Print(log.LVL_WARNING, "m3u read failed %s: %s", m3uPath, err)
+		return nil
+	}
+	baseDir := filepath.Dir(m3uPath)
+	var files []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "https://") || strings.HasPrefix(line, "http://") {
+			continue
+		}
+		if !filepath.IsAbs(line) {
+			line = filepath.Join(baseDir, line)
+		}
+		if strings.HasPrefix(line, "~/") {
+			home, _ := os.UserHomeDir()
+			line = filepath.Join(home, line[2:])
+		}
+		line = os.ExpandEnv(line)
+		if _, err := os.Stat(line); err != nil {
+			continue
+		}
+		if isAudioFile(line) {
+			files = append(files, line)
+		}
+	}
+	return files
+}
+
+func buildLocalTrack(filePath string) (*api.Track, error) {
 	fi, err := os.Stat(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if fi.Size() == 0 {
-		return fmt.Errorf("empty file")
+		return nil, fmt.Errorf("empty file")
 	}
 	f, err := os.Open(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 
@@ -166,14 +235,10 @@ func (m *Model) importLocalFile(filePath string) error {
 	sum := h.Sum(nil)
 	id := fmt.Sprintf("local_%x", sum[:8])
 
-	if m.cachedTracksMap[id] {
-		return fmt.Errorf("already imported")
-	}
-
 	_, _ = f.Seek(0, io.SeekStart)
 	cacheFile, err := cache.Write(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer cacheFile.Close()
 
@@ -204,54 +269,8 @@ func (m *Model) importLocalFile(filePath string) error {
 	_, err = io.Copy(cacheFile, f)
 	if err != nil {
 		_ = cache.Remove(id)
-		return err
+		return nil, err
 	}
 
-	m.cachedTracksMap[id] = true
-	localPl, idx := m.playlists.GetFirst(playlist.LOCAL)
-	if localPl == nil {
-		return fmt.Errorf("no local playlist")
-	}
-	localPl.AddTrack(track)
-	m.playlists.SetItem(idx, localPl)
-	if m.playlists.SelectedItem().Kind == playlist.LOCAL {
-		m.displayPlaylist(localPl)
-	}
-	return nil
-}
-
-func (m *Model) importM3U(m3uPath string) (int, error) {
-	data, err := os.ReadFile(m3uPath)
-	if err != nil {
-		return 0, err
-	}
-	baseDir := filepath.Dir(m3uPath)
-	lines := strings.Split(string(data), "\n")
-	count := 0
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasPrefix(line, "https://") || strings.HasPrefix(line, "http://") {
-			continue
-		}
-		if !filepath.IsAbs(line) {
-			line = filepath.Join(baseDir, line)
-		}
-		if strings.HasPrefix(line, "~/") {
-			home, _ := os.UserHomeDir()
-			line = filepath.Join(home, line[2:])
-		}
-		line = os.ExpandEnv(line)
-		if _, err := os.Stat(line); err != nil {
-			continue
-		}
-		if ext := strings.ToLower(filepath.Ext(line)); ext == ".mp3" || ext == ".flac" || ext == ".ogg" || ext == ".m4a" || ext == ".wav" {
-			if err := m.importLocalFile(line); err == nil {
-				count++
-			}
-		}
-	}
-	return count, nil
+	return track, nil
 }

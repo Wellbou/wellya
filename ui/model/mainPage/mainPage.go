@@ -54,6 +54,7 @@ type Model struct {
 	isAddPlaylistActive    bool
 	isRenamePlaylistActive bool
 	isUploadActive         bool
+	isUploading            bool
 	isPlaylistHideOverride bool
 	isConfirmActive        bool
 	isTrackInfoActive      bool
@@ -64,6 +65,7 @@ type Model struct {
 	currentPlaylistIndex int
 	currentIsRadio       bool
 	playGeneration       int
+	searchGen            int
 	likedTracksMap       map[string]bool
 	cachedTracksMap      map[string]bool
 	historyTracks        []api.Track
@@ -124,6 +126,40 @@ func (m *Model) currentPlaylists() *playlist.Model {
 	return m.playlists
 }
 
+func (m *Model) currentPlaylist() *playlist.Item {
+	if m.currentPlaylistIndex < 0 {
+		return nil
+	}
+	items := m.currentPlaylists().Items()
+	if m.currentPlaylistIndex >= len(items) {
+		return nil
+	}
+	return items[m.currentPlaylistIndex]
+}
+
+func (m *Model) realTrackIndex(pl *playlist.Item) int {
+	if len(m.tracklist.Items()) == 0 || pl == nil {
+		return -1
+	}
+	if m.tracklist.FilterValue() == "" && !m.showQueue {
+		idx := m.tracklist.Index()
+		if idx < 0 || idx >= len(pl.Tracks) {
+			return -1
+		}
+		return idx
+	}
+	sel := m.tracklist.SelectedItem()
+	if sel.Track == nil {
+		return -1
+	}
+	for i := range pl.Tracks {
+		if pl.Tracks[i].Id == sel.Track.Id {
+			return i
+		}
+	}
+	return -1
+}
+
 func (m *Model) toggleRadioTab() {
 	m.isRadioTab = !m.isRadioTab
 	if m.isRadioTab {
@@ -174,24 +210,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	)
 
 	switch msg := message.(type) {
-	case LoadingMsg:
+	case initialLoadDoneMsg:
 		m.isLoading = false
-		active := m.activePlaylists()
-		items := active.Items()
-		sel := 0
-		for i, it := range items {
-			if it.Active {
-				sel = i
-				break
-			}
-		}
-		active.Select(sel)
-		if len(items) > 0 {
-			selectedPlaylist := items[sel]
-			m.displayPlaylist(selectedPlaylist)
-			m.indicateCurrentTrackPlaying(m.tracker.IsPlaying())
-			m.tracklist.Shufflable = (selectedPlaylist.Kind != playlist.NONE && selectedPlaylist.Kind != playlist.MYWAVE && selectedPlaylist.Kind != playlist.STATION && selectedPlaylist.Kind != playlist.HISTORY && len(selectedPlaylist.Tracks) > 0)
-		}
+		m.applyInitialLoad(msg)
 		return m, nil
 
 	case toastTickMsg:
@@ -232,6 +253,81 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.tracker.ShowError(msg.reason)
+
+	case cacheAllDoneMsg:
+		m.applyCachedTracks(msg.tracks)
+
+	case errorToastMsg:
+		m.tracker.ShowError(msg.reason)
+
+	case playlistCreatedMsg:
+		m.applyPlaylistCreated(msg.item, msg.track)
+
+	case playlistTrackAddedMsg:
+		m.applyPlaylistTrackAdded(msg.kind, msg.rev, msg.track)
+
+	case renameDoneMsg:
+		m.applyRename(msg.kind, msg.title, msg.rev)
+
+	case likeDoneMsg:
+		cmd = m.applyLike(msg.trackId, msg.unlike, msg.track)
+		cmds = append(cmds, cmd)
+
+	case playlistRemovedMsg:
+		m.applyPlaylistRemoved(msg.kind, msg.isRadio)
+
+	case playlistTrackRemovedMsg:
+		m.applyPlaylistTrackRemoved(msg.kind, msg.rev, msg.index, msg.isRadio)
+
+	case browsedItemMsg:
+		m.applyBrowsedItem(msg.item)
+
+	case uploadDoneMsg:
+		m.isUploading = false
+		if msg.err != "" {
+			cmds = append(cmds, m.ShowToast(msg.err))
+			break
+		}
+		cmds = append(cmds, m.applyUploadedTracks(msg.tracks))
+
+	case downloadDoneMsg:
+		if msg.err != "" {
+			m.tracker.ShowError(msg.err)
+			break
+		}
+		cmds = append(cmds, m.ShowToast("Saved: "+msg.filename))
+
+	case searchReadyMsg:
+		if msg.gen != m.searchGen {
+			break
+		}
+		m.lastSearchResult = msg.res
+		m.hasSearchResult = true
+		cmds = append(cmds, m.playlists.SetItems(msg.items))
+		m.playlists.Select(msg.index)
+		m.Send(playlist.CURSOR_DOWN)
+
+	case searchSuggestMsg:
+		if msg.gen != m.searchGen {
+			break
+		}
+		if msg.err != nil {
+			log.Print(log.LVL_ERROR, "failed to obtain search suggestions: %s", msg.err)
+			m.tracker.ShowError("search suggestion")
+			break
+		}
+		m.searchDialog.SetSuggestions(msg.suggestions)
+
+	case searchTabResultsMsg:
+		if msg.gen != m.searchGen {
+			break
+		}
+		if msg.err != nil {
+			log.Print(log.LVL_ERROR, "failed to search [%s]: %s", msg.req, msg.err)
+			m.tracker.ShowError("search")
+			break
+		}
+		m.searchDialog.SetResults(msg.tracks)
 
 	case tea.WindowSizeMsg:
 		m.resize(msg.Width, msg.Height)
@@ -376,18 +472,19 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.albumListActive() {
 				cmd = m.openAlbum(m.tracklist.Index())
 				cmds = append(cmds, cmd)
-			} else {
-				m.playSelectedPlaylist(m.tracklist.Index())
+			} else if idx := m.realTrackIndex(playlistItem); idx >= 0 {
+				m.playSelectedPlaylist(idx)
 			}
 		case tracklist.SHOW_QUEUE:
 			m.toggleQueue()
 		case tracklist.CURSOR_UP, tracklist.CURSOR_DOWN:
 			active := m.activePlaylists()
 			currentPlaylist := active.SelectedItem()
-			cursorIndex := m.tracklist.Index()
-			currentPlaylist.SelectedTrack = cursorIndex
-			cmd = active.SetItem(active.Index(), currentPlaylist)
-			cmds = append(cmds, cmd)
+			if idx := m.realTrackIndex(currentPlaylist); idx >= 0 {
+				currentPlaylist.SelectedTrack = idx
+				cmd = active.SetItem(active.Index(), currentPlaylist)
+				cmds = append(cmds, cmd)
+			}
 		case tracklist.LIKE:
 			if !m.albumListActive() {
 				cmd = m.likeSelectedTrack()
@@ -398,14 +495,19 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			selectedTrack := m.tracklist.SelectedItem()
+			if selectedTrack.Track == nil {
+				break
+			}
 			m.searchDialog.Title = "Add " + selectedTrack.Track.Title + " to"
 			m.searchDialog.Action = "add"
 			m.isAddPlaylistActive = true
 			m.Send(search.UPDATE_SUGGESTIONS)
 		case tracklist.REMOVE_FROM_PLAYLIST:
 			selectedPlaylist := m.activePlaylists().SelectedItem()
-			cmd = m.confirmRemoveFromPlaylist(selectedPlaylist, m.tracklist.Index())
-			cmds = append(cmds, cmd)
+			if idx := m.realTrackIndex(selectedPlaylist); idx >= 0 {
+				cmd = m.confirmRemoveFromPlaylist(selectedPlaylist, idx)
+				cmds = append(cmds, cmd)
+			}
 		case tracklist.SEARCH:
 			m.searchDialog.Title = "Search"
 			m.searchDialog.Action = "search"
@@ -418,9 +520,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			if m.albumListActive() {
 				break
 			}
-			link := api.ShareTrackLink(m.tracklist.SelectedItem().Track)
-			if link != "" {
-				m.clipboard.CopyText(link)
+			if selTrack := m.tracklist.SelectedItem().Track; selTrack != nil {
+				if link := api.ShareTrackLink(selTrack); link != "" {
+					m.clipboard.CopyText(link)
+				}
 			}
 		case tracklist.BACK:
 			active := m.activePlaylists()
@@ -976,13 +1079,17 @@ func (m *Model) searchTabControl(msg search.Control) tea.Cmd {
 		if req == "" {
 			return nil
 		}
-		res, err := m.client.Search(req, api.SEARCH_ALL)
-		if err != nil {
-			log.Print(log.LVL_ERROR, "failed to search [%s]: %s", req, err)
-			m.tracker.ShowError("search")
-			return nil
-		}
-		m.searchDialog.SetResults(res.Tracks.Results)
+		m.searchGen++
+		gen := m.searchGen
+		client := m.client
+		go func() {
+			res, err := client.Search(req, api.SEARCH_ALL)
+			if err != nil {
+				m.Send(searchTabResultsMsg{gen: gen, req: req, err: err})
+				return
+			}
+			m.Send(searchTabResultsMsg{gen: gen, req: req, tracks: res.Tracks.Results})
+		}()
 	}
 	return cmd
 }

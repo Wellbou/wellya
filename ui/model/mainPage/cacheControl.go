@@ -98,30 +98,36 @@ func (m *Model) removeCache(track *api.Track) tea.Cmd {
 func (m *Model) cacheAllLikedTracks() {
 	likedPlaylist, _ := m.playlists.GetFirst(playlist.LIKES)
 	if likedPlaylist == nil || len(likedPlaylist.Tracks) == 0 {
-		m.tracker.ShowError("no liked tracks to cache")
+		m.Send(trackFailedMsg{generation: m.playGeneration, reason: "no liked tracks to cache"})
 		return
 	}
 
+	tracksCopy := make([]api.Track, len(likedPlaylist.Tracks))
+	copy(tracksCopy, likedPlaylist.Tracks)
+	skip := make(map[string]bool, len(m.cachedTracksMap))
+	for id := range m.cachedTracksMap {
+		skip[id] = true
+	}
+	go m.cacheTracksBatch(tracksCopy, skip, m.client)
+}
+
+func (m *Model) cacheTracksBatch(tracksCopy []api.Track, skip map[string]bool, client *api.YaMusicClient) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 3)
 	var mu sync.Mutex
 	var cachedTracks []api.Track
 
-	tracksCopy := make([]api.Track, len(likedPlaylist.Tracks))
-	copy(tracksCopy, likedPlaylist.Tracks)
-
 	for _, track := range tracksCopy {
-		if m.cachedTracksMap[string(track.Id)] {
+		if skip[string(track.Id)] {
 			continue
 		}
-
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(t api.Track) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if err := m.downloadAndCacheTrack(&t); err != nil {
+			if err := downloadAndCacheTrack(client, &t); err != nil {
 				log.Print(log.LVL_ERROR, "failed to cache track [%s]: %s", t.Id, err)
 				return
 			}
@@ -134,29 +140,37 @@ func (m *Model) cacheAllLikedTracks() {
 
 	wg.Wait()
 
-	for _, t := range cachedTracks {
+	log.Print(log.LVL_INFO, "batch cache complete: %d tracks cached", len(cachedTracks))
+	m.Send(cacheAllDoneMsg{tracks: cachedTracks})
+}
+
+type cacheAllDoneMsg struct {
+	tracks []api.Track
+}
+
+func (m *Model) applyCachedTracks(tracks []api.Track) {
+	for _, t := range tracks {
 		m.cachedTracksMap[string(t.Id)] = true
 	}
 	cachePlaylist, index := m.playlists.GetFirst(playlist.LOCAL)
 	if cachePlaylist != nil {
-		for i := range cachedTracks {
-			cachePlaylist.AddTrack(&cachedTracks[i])
+		for i := range tracks {
+			cachePlaylist.AddTrack(&tracks[i])
 		}
 		m.playlists.SetItem(index, cachePlaylist)
 	}
-
-	log.Print(log.LVL_INFO, "batch cache complete: %d tracks cached", len(cachedTracks))
+	m.indicateCurrentTrackPlaying(m.tracker.IsPlaying())
 }
 
-func (m *Model) downloadAndCacheTrack(track *api.Track) error {
-	trackInfos, err := m.client.TrackDownloadInfo(string(track.Id))
+func downloadAndCacheTrack(client *api.YaMusicClient, track *api.Track) error {
+	trackInfos, err := client.TrackDownloadInfo(string(track.Id))
 	if err != nil {
 		return err
 	}
 
 	bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
 
-	trackReader, _, err := m.client.DownloadTrack(bestTrackInfo)
+	trackReader, _, err := client.DownloadTrack(bestTrackInfo)
 	if err != nil {
 		return err
 	}
@@ -190,6 +204,11 @@ func sanitizeFilename(s string) string {
 	return strings.TrimSpace(result)
 }
 
+type downloadDoneMsg struct {
+	filename string
+	err      string
+}
+
 func (m *Model) downloadCurrentTrack() tea.Cmd {
 	currentTrack := m.tracker.CurrentTrack()
 	if m.tracker.IsStoped() {
@@ -220,34 +239,46 @@ func (m *Model) downloadCurrentTrack() tea.Cmd {
 		return nil
 	}
 
-	trackInfos, err := m.client.TrackDownloadInfo(string(currentTrack.Id))
+	trackCopy := *currentTrack
+	go m.downloadTrackFile(m.client, &trackCopy, filePath, filename)
+	return m.ShowToast("downloading: " + filename)
+}
+
+func (m *Model) downloadTrackFile(client *api.YaMusicClient, track *api.Track, filePath, filename string) {
+	fail := func(reason, logMsg string) {
+		log.Print(log.LVL_ERROR, logMsg)
+		m.Send(downloadDoneMsg{err: reason})
+	}
+
+	trackInfos, err := client.TrackDownloadInfo(string(track.Id))
 	if err != nil {
-		log.Print(log.LVL_ERROR, "failed to get download info: %s", err)
-		m.tracker.ShowError("download: info")
-		return nil
+		fail("download: info", fmt.Sprintf("failed to get download info: %s", err))
+		return
 	}
 
 	bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
 
-	trackReader, _, err := m.client.DownloadTrack(bestTrackInfo)
+	trackReader, _, err := client.DownloadTrack(bestTrackInfo)
 	if err != nil {
-		log.Print(log.LVL_ERROR, "failed to download track: %s", err)
-		m.tracker.ShowError("download: stream")
-		return nil
+		fail("download: stream", fmt.Sprintf("failed to download track: %s", err))
+		return
 	}
 	defer trackReader.Close()
 
 	file, err := os.Create(filePath)
 	if err != nil {
-		log.Print(log.LVL_ERROR, "failed to create file: %s", err)
-		m.tracker.ShowError("download: create file")
-		return nil
+		fail("download: create file", fmt.Sprintf("failed to create file: %s", err))
+		return
 	}
 	defer file.Close()
 
-	writeTrackID3Tag(file, currentTrack, nil, "")
-	io.Copy(file, trackReader)
+	writeTrackID3Tag(file, track, nil, "")
+	if _, err := io.Copy(file, trackReader); err != nil {
+		_ = os.Remove(filePath)
+		fail("download: stream", fmt.Sprintf("failed to write track: %s", err))
+		return
+	}
 
 	log.Print(log.LVL_INFO, "track downloaded: %s", filePath)
-	return m.ShowToast("Saved: " + filename)
+	m.Send(downloadDoneMsg{filename: filename})
 }

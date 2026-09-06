@@ -12,22 +12,27 @@ func (m *Model) goToAlbum() tea.Cmd {
 		return nil
 	}
 
-	selectedPlaylist := m.playlists.SelectedItem()
+	selectedPlaylist := m.activePlaylists().SelectedItem()
 	if len(selectedPlaylist.Tracks) == 0 {
 		return nil
 	}
 
 	selectedTrack := m.tracklist.SelectedItem().Track
-	if len(selectedTrack.Albums) == 0 {
+	if selectedTrack == nil || len(selectedTrack.Albums) == 0 {
 		return nil
 	}
 
 	albumId := uint64(selectedTrack.Albums[0].Id)
-	album, err := m.client.Album(albumId, true)
+	go m.fetchAlbumTracks(m.client, albumId)
+	return nil
+}
+
+func (m *Model) fetchAlbumTracks(client *api.YaMusicClient, albumId uint64) {
+	album, err := client.Album(albumId, true)
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to obtain album [%d] tracks: %s", albumId, err)
-		m.tracker.ShowError("album tracks")
-		return nil
+		m.Send(errorToastMsg{reason: "album tracks"})
+		return
 	}
 
 	var albumTracks []api.Track
@@ -36,36 +41,15 @@ func (m *Model) goToAlbum() tea.Cmd {
 	}
 
 	if len(albumTracks) == 0 {
-		return nil
+		m.Send(errorToastMsg{reason: "album has no tracks"})
+		return
 	}
 
-	playlists := m.playlists.Items()
-	insertIndex := m.playlists.Index() + 1
-	for i := insertIndex; i < len(playlists); i++ {
-		if playlists[i].Kind >= playlist.USER {
-			insertIndex = i
-			break
-		}
-		if i == len(playlists)-1 {
-			insertIndex = len(playlists)
-		}
-	}
-
-	albumItem := &playlist.Item{
+	m.Send(browsedItemMsg{item: &playlist.Item{
 		Name:    album.Title,
 		Kind:    playlist.ALBUMS,
 		Active:  true,
 		Subitem: true,
 		Tracks:  albumTracks,
-	}
-
-	m.playlists.InsertItem(insertIndex, albumItem)
-
-	if insertIndex <= m.playlists.Index() {
-		m.playlists.Select(m.playlists.Index() + 1)
-	}
-
-	m.displayPlaylist(albumItem)
-
-	return nil
+	}})
 }

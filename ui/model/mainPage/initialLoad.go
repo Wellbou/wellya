@@ -12,11 +12,16 @@ import (
 	"github.com/wellbou/wellya/ui/components/playlist"
 )
 
-type LoadingMsg uint
-
-const (
-	LOADING_DONE LoadingMsg = iota
-)
+type initialLoadDoneMsg struct {
+	client               *api.YaMusicClient
+	myWaveMenuBlock      menuBlock
+	stationsMenuBlock    menuBlock
+	localTracksMenuBlock menuBlock
+	likedTracksMenuBlock menuBlock
+	likedAlbumsMenuBlock menuBlock
+	pinnedAlbumsMenuBlock  menuBlock
+	userPlaylistsMenuBlock menuBlock
+}
 
 type menuBlock struct {
 	items []*playlist.Item
@@ -24,24 +29,21 @@ type menuBlock struct {
 }
 
 func (m *Model) initialLoad() {
-	m.tracker.HideError()
-	m.playlists.Reset()
-	m.radioPlaylists.Reset()
+	var client *api.YaMusicClient
 
 	if len(config.Current.Token) == 0 {
 		log.Print(log.LVL_ERROR, "missing client token, check the config file at '%s'", config.Path())
-		m.tracker.ShowError("missing token")
-		m.client = nil
+		m.Send(errorToastMsg{reason: "missing token"})
 	} else {
 		c, err := api.NewClient(config.DirName, config.Current.Token)
-		m.client = c
+		client = c
 		if err != nil {
 			if _, ok := err.(*url.Error); ok {
 				log.Print(log.LVL_ERROR, "failed to connect to the Yandex server: %s", err)
-				m.tracker.ShowError("unable to connect to the Yandex server")
+				m.Send(errorToastMsg{reason: "unable to connect to the Yandex server"})
 			} else {
 				log.Print(log.LVL_ERROR, "client init error: %s", err)
-				m.tracker.ShowError("unable to login: " + err.Error())
+				m.Send(errorToastMsg{reason: "unable to login: " + err.Error()})
 			}
 		}
 	}
@@ -58,14 +60,38 @@ func (m *Model) initialLoad() {
 	)
 
 	wg.Add(7)
-	go m.loadMyWave(&wg, &myWaveMenuBlock)
-	go m.loadStations(&wg, &stationsMenuBlock)
+	go loadMyWave(client, &wg, &myWaveMenuBlock)
+	go loadStations(client, &wg, &stationsMenuBlock)
 	go m.loadLocalTracks(&wg, &localTracksMenuBlock)
-	go m.loadLikedTracks(&wg, &likedTracksMenuBlock)
-	go m.loadLikedAlbums(&wg, &likedAlbumsMenuBlock)
-	go m.loadPinnedAlbums(&wg, &pinnedAlbumsMenuBlock)
-	go m.loadUserPlaylists(&wg, &userPlaylistsMenuBlock)
+	go loadLikedTracks(client, &wg, &likedTracksMenuBlock)
+	go loadLikedAlbums(client, &wg, &likedAlbumsMenuBlock)
+	go loadPinnedAlbums(client, &wg, &pinnedAlbumsMenuBlock)
+	go loadUserPlaylists(client, &wg, &userPlaylistsMenuBlock)
 	wg.Wait()
+
+	m.Send(initialLoadDoneMsg{
+		client:                 client,
+		myWaveMenuBlock:        myWaveMenuBlock,
+		stationsMenuBlock:      stationsMenuBlock,
+		localTracksMenuBlock:   localTracksMenuBlock,
+		likedTracksMenuBlock:   likedTracksMenuBlock,
+		likedAlbumsMenuBlock:   likedAlbumsMenuBlock,
+		pinnedAlbumsMenuBlock:  pinnedAlbumsMenuBlock,
+		userPlaylistsMenuBlock: userPlaylistsMenuBlock,
+	})
+}
+
+func (m *Model) applyInitialLoad(d initialLoadDoneMsg) {
+	m.client = d.client
+	m.tracker.HideError()
+
+	myWaveMenuBlock := d.myWaveMenuBlock
+	stationsMenuBlock := d.stationsMenuBlock
+	localTracksMenuBlock := d.localTracksMenuBlock
+	likedTracksMenuBlock := d.likedTracksMenuBlock
+	likedAlbumsMenuBlock := d.likedAlbumsMenuBlock
+	pinnedAlbumsMenuBlock := d.pinnedAlbumsMenuBlock
+	userPlaylistsMenuBlock := d.userPlaylistsMenuBlock
 
 	if stationsMenuBlock.err == nil {
 		m.radioPlaylists.InsertItem(-1, playlist.ItemCategory("stations:"))
@@ -74,7 +100,7 @@ func (m *Model) initialLoad() {
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to list stations: %s", stationsMenuBlock.err)
-		m.tracker.ShowError("stations list")
+		m.Send(errorToastMsg{reason: "stations list"})
 	}
 
 	m.playlists.InsertItem(-1, playlist.ItemCategory("likes:"))
@@ -87,7 +113,7 @@ func (m *Model) initialLoad() {
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to obtain liked tracks: %s", likedTracksMenuBlock.err)
-		m.tracker.ShowError("liked tracks")
+		m.Send(errorToastMsg{reason: "liked tracks"})
 	}
 
 	if likedAlbumsMenuBlock.err == nil {
@@ -96,7 +122,7 @@ func (m *Model) initialLoad() {
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to obtain liked albums: %s", likedAlbumsMenuBlock.err)
-		m.tracker.ShowError("liked albums")
+		m.Send(errorToastMsg{reason: "liked albums"})
 	}
 
 	if pinnedAlbumsMenuBlock.err == nil {
@@ -105,7 +131,7 @@ func (m *Model) initialLoad() {
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to obtain pinned albums: %s", pinnedAlbumsMenuBlock.err)
-		m.tracker.ShowError("pinned albums")
+		m.Send(errorToastMsg{reason: "pinned albums"})
 	}
 
 	m.playlists.InsertItem(-1, playlist.ItemEmpty())
@@ -116,7 +142,7 @@ func (m *Model) initialLoad() {
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to obtain user playlists: %s", userPlaylistsMenuBlock.err)
-		m.tracker.ShowError("playlists")
+		m.Send(errorToastMsg{reason: "playlists"})
 	}
 
 	if myWaveMenuBlock.err == nil {
@@ -126,7 +152,7 @@ func (m *Model) initialLoad() {
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "unable to init rotor session: %s", myWaveMenuBlock.err)
-		m.tracker.ShowError("unable to init rotor session")
+		m.Send(errorToastMsg{reason: "unable to init rotor session"})
 	}
 
 	m.playlists.InsertItem(-1, playlist.ItemEmpty())
@@ -141,24 +167,40 @@ func (m *Model) initialLoad() {
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to list cached tracks: %s", localTracksMenuBlock.err)
-		m.tracker.ShowError("cache list")
+		m.Send(errorToastMsg{reason: "cache list"})
 	}
 
 	m.currentPlaylistIndex = -1
 	m.currentIsRadio = false
 	m.playlists.Select(0)
 	m.radioPlaylists.Select(0)
-	m.Send(LOADING_DONE)
+
+	active := m.activePlaylists()
+	items := active.Items()
+	sel := 0
+	for i, it := range items {
+		if it.Active {
+			sel = i
+			break
+		}
+	}
+	active.Select(sel)
+	if len(items) > 0 {
+		selectedPlaylist := items[sel]
+		m.displayPlaylist(selectedPlaylist)
+		m.indicateCurrentTrackPlaying(m.tracker.IsPlaying())
+		m.tracklist.Shufflable = (selectedPlaylist.Kind != playlist.NONE && selectedPlaylist.Kind != playlist.MYWAVE && selectedPlaylist.Kind != playlist.STATION && selectedPlaylist.Kind != playlist.HISTORY && len(selectedPlaylist.Tracks) > 0)
+	}
 }
 
-func (m *Model) loadMyWave(wg *sync.WaitGroup, block *menuBlock) {
+func loadMyWave(client *api.YaMusicClient, wg *sync.WaitGroup, block *menuBlock) {
 	defer wg.Done()
 
-	if m.client == nil {
+	if client == nil {
 		return
 	}
 
-	session, err := m.client.RotorNewSession(api.MyWaveId)
+	session, err := client.RotorNewSession(api.MyWaveId)
 	if err != nil {
 		block.err = err
 		return
@@ -194,14 +236,14 @@ func (m *Model) loadLocalTracks(wg *sync.WaitGroup, block *menuBlock) {
 	block.items = append(block.items, st)
 }
 
-func (m *Model) loadLikedTracks(wg *sync.WaitGroup, block *menuBlock) {
+func loadLikedTracks(client *api.YaMusicClient, wg *sync.WaitGroup, block *menuBlock) {
 	defer wg.Done()
 
-	if m.client == nil {
+	if client == nil {
 		return
 	}
 
-	likes, err := m.client.LikedTracks()
+	likes, err := client.LikedTracks()
 	if err != nil {
 		block.err = err
 		return
@@ -212,7 +254,7 @@ func (m *Model) loadLikedTracks(wg *sync.WaitGroup, block *menuBlock) {
 		ids[i] = string(tr.Id)
 	}
 
-	tracks, err := m.client.Tracks(ids)
+	tracks, err := client.Tracks(ids)
 	if err != nil {
 		block.err = err
 		return
@@ -222,14 +264,14 @@ func (m *Model) loadLikedTracks(wg *sync.WaitGroup, block *menuBlock) {
 	block.items = append(block.items, st)
 }
 
-func (m *Model) loadLikedAlbums(wg *sync.WaitGroup, block *menuBlock) {
+func loadLikedAlbums(client *api.YaMusicClient, wg *sync.WaitGroup, block *menuBlock) {
 	defer wg.Done()
 
-	if m.client == nil {
+	if client == nil {
 		return
 	}
 
-	likedAlbums, err := m.client.LikedAlbums()
+	likedAlbums, err := client.LikedAlbums()
 	if err != nil {
 		block.err = err
 		return
@@ -237,7 +279,7 @@ func (m *Model) loadLikedAlbums(wg *sync.WaitGroup, block *menuBlock) {
 
 	albums := make([]api.Album, 0, len(likedAlbums))
 	for _, albumInfo := range likedAlbums {
-		album, err := m.client.Album(uint64(albumInfo.Id), true)
+		album, err := client.Album(uint64(albumInfo.Id), true)
 		if err != nil {
 			log.Print(log.LVL_ERROR, "failed to obtain album [%d] info: %s", albumInfo.Id, err)
 			continue
@@ -249,14 +291,14 @@ func (m *Model) loadLikedAlbums(wg *sync.WaitGroup, block *menuBlock) {
 	block.items = append(block.items, st)
 }
 
-func (m *Model) loadPinnedAlbums(wg *sync.WaitGroup, block *menuBlock) {
+func loadPinnedAlbums(client *api.YaMusicClient, wg *sync.WaitGroup, block *menuBlock) {
 	defer wg.Done()
 
-	if m.client == nil {
+	if client == nil {
 		return
 	}
 
-	pinnedAlbums, err := m.client.PinnedAlbums()
+	pinnedAlbums, err := client.PinnedAlbums()
 	if err != nil {
 		block.err = err
 		return
@@ -264,7 +306,7 @@ func (m *Model) loadPinnedAlbums(wg *sync.WaitGroup, block *menuBlock) {
 
 	albums := make([]api.Album, 0, len(pinnedAlbums))
 	for _, albumInfo := range pinnedAlbums {
-		album, err := m.client.Album(uint64(albumInfo.Data.Id), true)
+		album, err := client.Album(uint64(albumInfo.Data.Id), true)
 		if err != nil {
 			log.Print(log.LVL_ERROR, "failed to obtain pinned album [%d] info: %s", albumInfo.Data.Id, err)
 			continue
@@ -295,14 +337,14 @@ func (m *Model) loadPinnedAlbums(wg *sync.WaitGroup, block *menuBlock) {
 	}
 }
 
-func (m *Model) loadUserPlaylists(wg *sync.WaitGroup, block *menuBlock) {
+func loadUserPlaylists(client *api.YaMusicClient, wg *sync.WaitGroup, block *menuBlock) {
 	defer wg.Done()
 
-	if m.client == nil {
+	if client == nil {
 		return
 	}
 
-	playlists, err := m.client.ListPlaylists()
+	playlists, err := client.ListPlaylists()
 	if err != nil {
 		block.err = err
 		return
@@ -314,7 +356,7 @@ func (m *Model) loadUserPlaylists(wg *sync.WaitGroup, block *menuBlock) {
 		innerWg.Add(1)
 		go func(i int, pl api.Playlist) {
 			defer innerWg.Done()
-			tracks, terr := m.client.PlaylistTracks(uint64(pl.Kind), uint64(pl.Owner.Uid), false)
+			tracks, terr := client.PlaylistTracks(uint64(pl.Kind), uint64(pl.Owner.Uid), false)
 			if terr != nil {
 				log.Print(log.LVL_ERROR, "failed to obtain user playlist [%s] tracks: %s", pl.Title, terr)
 				return
@@ -331,7 +373,7 @@ func (m *Model) loadUserPlaylists(wg *sync.WaitGroup, block *menuBlock) {
 		for i, pl := range playlists {
 			tracks := playlistTracks[i]
 			if len(tracks) == 0 {
-				m.tracker.ShowError("playlist tracks")
+				log.Print(log.LVL_WARNING, "empty user playlist [%s], skipped", pl.Title)
 				continue
 			}
 			block.items = append(block.items, &playlist.Item{
@@ -346,14 +388,14 @@ func (m *Model) loadUserPlaylists(wg *sync.WaitGroup, block *menuBlock) {
 	}
 }
 
-func (m *Model) loadStations(wg *sync.WaitGroup, block *menuBlock) {
+func loadStations(client *api.YaMusicClient, wg *sync.WaitGroup, block *menuBlock) {
 	defer wg.Done()
 
-	if m.client == nil {
+	if client == nil {
 		return
 	}
 
-	stations, err := m.client.Stations("ru")
+	stations, err := client.Stations("ru")
 	if err != nil {
 		block.err = err
 		return

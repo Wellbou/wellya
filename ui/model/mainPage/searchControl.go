@@ -13,9 +13,27 @@ import (
 	"github.com/wellbou/wellya/ui/helpers"
 )
 
-func (m *Model) searchControl(msg search.Control) tea.Cmd {
-	var cmd tea.Cmd
+type searchReadyMsg struct {
+	gen   int
+	res   api.SearchResult
+	items []*playlist.Item
+	index int
+}
 
+type searchSuggestMsg struct {
+	gen         int
+	suggestions []string
+	err         error
+}
+
+type searchTabResultsMsg struct {
+	gen    int
+	req    string
+	tracks []api.Track
+	err    error
+}
+
+func (m *Model) searchControl(msg search.Control) tea.Cmd {
 	switch msg {
 	case search.SELECT:
 		m.isSearchActive = false
@@ -25,40 +43,62 @@ func (m *Model) searchControl(msg search.Control) tea.Cmd {
 			return nil
 		}
 
-		searchRes, err := m.client.Search(req, api.SEARCH_ALL)
-		if err != nil {
-			log.Print(log.LVL_ERROR, "failed to search [%s]: %s", req, err)
-			m.tracker.ShowError("search")
-			return nil
-		}
-
-		m.lastSearchResult = searchRes
-		m.hasSearchResult = true
-		cmd = m.displaySearchResults(searchRes)
+		m.searchGen++
+		gen := m.searchGen
+		base := append([]*playlist.Item(nil), m.playlists.Items()...)
+		filter := m.searchDialog.Filter()
+		client := m.client
+		go func() {
+			res, err := client.Search(req, api.SEARCH_ALL)
+			if err != nil {
+				log.Print(log.LVL_ERROR, "failed to search [%s]: %s", req, err)
+				m.Send(errorToastMsg{reason: "search"})
+				return
+			}
+			items, index := makeSearchItems(client, base, res, filter)
+			m.Send(searchReadyMsg{gen: gen, res: res, items: items, index: index})
+		}()
+		return nil
 	case search.CANCEL:
 		m.isSearchActive = false
+		return nil
 	case search.UPDATE_SUGGESTIONS:
-		suggestions, err := m.client.SearchSuggest(m.searchDialog.InputValue())
-		if err != nil {
-			log.Print(log.LVL_ERROR, "failed to obtain search [%s] suggestions: %s", m.searchDialog.InputValue(), err)
-			m.tracker.ShowError("search suggestion")
-			return nil
-		}
-		m.searchDialog.SetSuggestions(suggestions.Suggestions)
+		input := m.searchDialog.InputValue()
+		m.searchGen++
+		gen := m.searchGen
+		client := m.client
+		go func() {
+			suggestions, err := client.SearchSuggest(input)
+			if err != nil {
+				m.Send(searchSuggestMsg{gen: gen, err: err})
+				return
+			}
+			m.Send(searchSuggestMsg{gen: gen, suggestions: suggestions.Suggestions})
+		}()
+		return nil
 	case search.TOGGLE_FILTER:
 		f := m.searchDialog.Filter()
 		f = (f + 1) % 5
 		m.searchDialog.SetFilter(f)
 		if m.hasSearchResult {
-			cmd = m.displaySearchResults(m.lastSearchResult)
+			res := m.lastSearchResult
+			m.searchGen++
+			gen := m.searchGen
+			base := append([]*playlist.Item(nil), m.playlists.Items()...)
+			filter := m.searchDialog.Filter()
+			client := m.client
+			go func() {
+				items, index := makeSearchItems(client, base, res, filter)
+				m.Send(searchReadyMsg{gen: gen, res: res, items: items, index: index})
+			}()
 		}
+		return nil
 	}
 
-	return cmd
+	return nil
 }
 
-func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
-	playlists := m.playlists.Items()
+func makeSearchItems(client *api.YaMusicClient, playlists []*playlist.Item, res api.SearchResult, filter int) ([]*playlist.Item, int) {
 	searchResIndex := len(playlists) + 2
 	for i, pl := range playlists {
 		if !pl.Active && !pl.Subitem && pl.Name == "search results:" {
@@ -72,8 +112,6 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 		&playlist.Item{Name: "", Kind: playlist.NONE, Active: false, Subitem: false},
 		&playlist.Item{Name: "search results:", Kind: playlist.NONE, Active: false, Subitem: false},
 	)
-
-	filter := m.searchDialog.Filter()
 
 	if filter == 0 || filter == 1 {
 		if len(res.Tracks.Results) > 0 {
@@ -93,19 +131,15 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 					continue
 				}
 
-				artistTracks, err := m.client.ArtistPopularTracks(uint64(artist.Id))
+				artistTracks, err := client.ArtistPopularTracks(uint64(artist.Id))
 				if err != nil {
-					sval, _ := m.searchDialog.SuggestionValue()
-					log.Print(log.LVL_ERROR, "failed to obtain search [%s] artist [%s] tracks: %s", sval, artist.Name, err)
-					m.tracker.ShowError("search artist tracks")
+					log.Print(log.LVL_ERROR, "failed to obtain artist [%s] tracks: %s", artist.Name, err)
 					continue
 				}
 
-				tracks, err := m.client.Tracks(artistTracks.Tracks)
+				tracks, err := client.Tracks(artistTracks.Tracks)
 				if err != nil {
-					sval, _ := m.searchDialog.SuggestionValue()
-					log.Print(log.LVL_ERROR, "failed to obtain search [%s] artist [%s] tracks full info: %s", sval, artist.Name, err)
-					m.tracker.ShowError("search artist tracks info")
+					log.Print(log.LVL_ERROR, "failed to obtain artist [%s] tracks full info: %s", artist.Name, err)
 					continue
 				}
 
@@ -126,11 +160,9 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 					continue
 				}
 
-				albumWithTracks, err := m.client.Album(uint64(album.Id), true)
+				albumWithTracks, err := client.Album(uint64(album.Id), true)
 				if err != nil {
-					sval, _ := m.searchDialog.SuggestionValue()
-					log.Print(log.LVL_ERROR, "failed to obtain search [%s] album [%s] tracks: %s", sval, album.Title, err)
-					m.tracker.ShowError("search album tracks")
+					log.Print(log.LVL_ERROR, "failed to obtain album [%s] tracks: %s", album.Title, err)
 					continue
 				}
 
@@ -163,11 +195,9 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 					continue
 				}
 
-				playlistTracks, err := m.client.PlaylistTracks(uint64(pl.Kind), uint64(pl.Owner.Uid), false)
+				playlistTracks, err := client.PlaylistTracks(uint64(pl.Kind), uint64(pl.Owner.Uid), false)
 				if err != nil {
-					sval, _ := m.searchDialog.SuggestionValue()
-					log.Print(log.LVL_ERROR, "failed to obtain search [%s] playlist [%s] tracks: %s", sval, pl.Title, err)
-					m.tracker.ShowError("search playlist tracks")
+					log.Print(log.LVL_ERROR, "failed to obtain playlist [%s] tracks: %s", pl.Title, err)
 					continue
 				}
 
@@ -181,9 +211,5 @@ func (m *Model) displaySearchResults(res api.SearchResult) tea.Cmd {
 		}
 	}
 
-	cmd := m.playlists.SetItems(playlists)
-	m.playlists.Select(searchResIndex)
-	m.Send(playlist.CURSOR_DOWN)
-
-	return cmd
+	return playlists, searchResIndex
 }

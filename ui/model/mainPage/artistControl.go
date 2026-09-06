@@ -8,43 +8,62 @@ import (
 	"github.com/wellbou/wellya/ui/helpers"
 )
 
+type browsedItemMsg struct {
+	item *playlist.Item
+	err  string
+}
+
 func (m *Model) browseSelectedTrackArtist() tea.Cmd {
 	if m.client == nil {
 		return nil
 	}
 
-	selectedPlaylist := m.playlists.SelectedItem()
+	selectedPlaylist := m.activePlaylists().SelectedItem()
 	if len(selectedPlaylist.Tracks) == 0 {
 		return nil
 	}
 
 	selectedTrack := m.tracklist.SelectedItem().Track
-	if len(selectedTrack.Artists) == 0 {
+	if selectedTrack == nil || len(selectedTrack.Artists) == 0 {
 		return nil
 	}
 
 	artist := selectedTrack.Artists[0]
-	artistTracks, err := m.client.ArtistPopularTracks(uint64(artist.Id))
+	go m.fetchArtistTracks(m.client, artist)
+	return nil
+}
+
+func (m *Model) fetchArtistTracks(client *api.YaMusicClient, artist api.Artist) {
+	artistTracks, err := client.ArtistPopularTracks(uint64(artist.Id))
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to obtain artist [%s] tracks: %s", artist.Name, err)
-		m.tracker.ShowError("artist tracks")
-		return nil
+		m.Send(errorToastMsg{reason: "artist tracks"})
+		return
 	}
 
-	tracks, err := m.client.Tracks(artistTracks.Tracks)
+	tracks, err := client.Tracks(artistTracks.Tracks)
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to obtain artist [%s] tracks full info: %s", artist.Name, err)
-		m.tracker.ShowError("artist tracks info")
-		return nil
+		m.Send(errorToastMsg{reason: "artist tracks info"})
+		return
 	}
 
 	if len(tracks) == 0 {
-		m.tracker.ShowError("artist has no tracks")
-		return nil
+		m.Send(errorToastMsg{reason: "artist has no tracks"})
+		return
 	}
 
 	artistName := helpers.ArtistList([]api.Artist{artist})
+	m.Send(browsedItemMsg{item: &playlist.Item{
+		Name:    artistName,
+		Kind:    playlist.ARTIST,
+		Active:  true,
+		Subitem: true,
+		Tracks:  tracks,
+	}})
+}
 
+func (m *Model) applyBrowsedItem(item *playlist.Item) {
 	playlists := m.playlists.Items()
 	insertIndex := m.playlists.Index() + 1
 	for i := insertIndex; i < len(playlists); i++ {
@@ -57,21 +76,11 @@ func (m *Model) browseSelectedTrackArtist() tea.Cmd {
 		}
 	}
 
-	artistItem := &playlist.Item{
-		Name:    artistName,
-		Kind:    playlist.ARTIST,
-		Active:  true,
-		Subitem: true,
-		Tracks:  tracks,
-	}
-
-	m.playlists.InsertItem(insertIndex, artistItem)
+	m.playlists.InsertItem(insertIndex, item)
 
 	if insertIndex <= m.playlists.Index() {
 		m.playlists.Select(m.playlists.Index() + 1)
 	}
 
-	m.displayPlaylist(artistItem)
-
-	return nil
+	m.displayPlaylist(item)
 }

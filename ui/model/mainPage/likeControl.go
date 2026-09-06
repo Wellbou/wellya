@@ -9,9 +9,7 @@ import (
 
 func (m *Model) likePlayingTrack() tea.Cmd {
 	var currentPlaylist *playlist.Item
-	if m.currentPlaylistIndex >= 0 {
-		currentPlaylist = m.playlists.Items()[m.currentPlaylistIndex]
-	}
+	currentPlaylist = m.currentPlaylist()
 
 	track := m.tracker.CurrentTrack()
 	return m.likeTrack(track, currentPlaylist)
@@ -22,39 +20,79 @@ func (m *Model) likeSelectedTrack() tea.Cmd {
 		return nil
 	}
 
-	selectedPlaylist := m.playlists.SelectedItem()
+	selectedPlaylist := m.activePlaylists().SelectedItem()
 	if len(selectedPlaylist.Tracks) == 0 {
 		return nil
 	}
 
 	track := m.tracklist.SelectedItem().Track
+	if track == nil {
+		return nil
+	}
 	return m.likeTrack(track, selectedPlaylist)
 }
 
-func (m *Model) likeTrack(track *api.Track, pl *playlist.Item) tea.Cmd {
-	likedPlaylist, index := m.playlists.GetFirst(playlist.LIKES)
+type likeDoneMsg struct {
+	trackId string
+	unlike  bool
+	track   api.Track
+}
 
+func (m *Model) likeTrack(track *api.Track, pl *playlist.Item) tea.Cmd {
+	if track == nil {
+		return nil
+	}
+	id := string(track.Id)
+	unlike := m.likedTracksMap[id]
+	trackCopy := *track
+	client := m.client
+	var sessionId, sessionBatch string
 	var evType api.TrackEventType
-	if m.likedTracksMap[string(track.Id)] {
-		if m.client.UnlikeTrack(string(track.Id)) != nil {
-			return nil
-		}
-		delete(m.likedTracksMap, string(track.Id))
-		likedPlaylist.RemoveTrack(string(track.Id))
-		evType = api.EV_TRACK_UNLIKED
-	} else {
-		if m.client.LikeTrack(string(track.Id)) != nil {
-			return nil
-		}
-		m.likedTracksMap[string(track.Id)] = true
-		likedPlaylist.AddTrack(track)
+	var rotor bool
+	if pl != nil && pl.Rotor {
+		rotor = true
+		sessionId = pl.SessionId
+		sessionBatch = pl.SessionBatch
 		evType = api.EV_TRACK_LIKED
+		if unlike {
+			evType = api.EV_TRACK_UNLIKED
+		}
 	}
 
-	if pl != nil && pl.Rotor {
-		ev := api.NewTrackFeedbackEvent(evType, track, 0)
-		go m.client.RotorSessionFeedback(pl.SessionId, api.NewFeedback(pl.SessionBatch, ev))
-		log.Print(log.LVL_INFO, "feedback event sended: "+ev.Type+" track: "+track.Title)
+	go func() {
+		var err error
+		if unlike {
+			err = client.UnlikeTrack(id)
+		} else {
+			err = client.LikeTrack(id)
+		}
+		if err != nil {
+			log.Print(log.LVL_ERROR, "failed to like/unlike track [%s]: %s", id, err)
+			m.Send(errorToastMsg{reason: "like failed"})
+			return
+		}
+		if rotor {
+			ev := api.NewTrackFeedbackEvent(evType, &trackCopy, 0)
+			go client.RotorSessionFeedback(sessionId, api.NewFeedback(sessionBatch, ev))
+			log.Print(log.LVL_INFO, "feedback event sended: "+ev.Type+" track: "+trackCopy.Title)
+		}
+		m.Send(likeDoneMsg{trackId: id, unlike: unlike, track: trackCopy})
+	}()
+	return nil
+}
+
+func (m *Model) applyLike(trackId string, unlike bool, track api.Track) tea.Cmd {
+	likedPlaylist, index := m.playlists.GetFirst(playlist.LIKES)
+	if likedPlaylist == nil {
+		return nil
+	}
+	if unlike {
+		delete(m.likedTracksMap, trackId)
+		likedPlaylist.RemoveTrack(trackId)
+	} else {
+		m.likedTracksMap[trackId] = true
+		t := track
+		likedPlaylist.AddTrack(&t)
 	}
 
 	cmd := m.playlists.SetItem(index, likedPlaylist)

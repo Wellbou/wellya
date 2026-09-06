@@ -330,7 +330,13 @@ func (m *Model) SetItem(index int, item Item) tea.Cmd {
 }
 
 func (m *Model) SelectedItem() Item {
-	return m.list.SelectedItem().(Item)
+	if len(m.list.Items()) == 0 {
+		return Item{}
+	}
+	if it, ok := m.list.SelectedItem().(Item); ok {
+		return it
+	}
+	return Item{}
 }
 
 func (m *Model) Index() int {
