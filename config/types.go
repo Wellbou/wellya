@@ -175,6 +175,7 @@ type Controls struct {
 	PlayerRepeatMode     *Key `yaml:"player-repeat-mode"`
 	PlayerSleepTimer     *Key `yaml:"player-sleep-timer"`
 	PlayerDislike        *Key `yaml:"player-dislike"`
+	KeysHelp             *Key `yaml:"keys-help"`
 }
 
 type Search struct {
@@ -255,7 +256,7 @@ var defaultConfig = Config{
 		TracksExport:             NewKey("E"),
 		TracksUpload:             NewKey("U"),
 		TracksStats:              NewKey("ctrl+g"),
-		TracksPlayNext:           NewKey("n"),
+		TracksPlayNext:           NewKey("p"),
 		PlayerPause:              NewKey("space"),
 		PlayerNext:               NewKey("right"),
 		PlayerPrevious:           NewKey("left"),
@@ -274,6 +275,7 @@ var defaultConfig = Config{
 		PlayerRepeatMode:        NewKey("r"),
 		PlayerSleepTimer:        NewKey("n"),
 		PlayerDislike:           NewKey("D"),
+		KeysHelp:                 NewKey("f1"),
 	},
 	Style: &Style{
 		VolumeIndicatorWidth:    16,

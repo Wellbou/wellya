@@ -461,9 +461,9 @@ type TrackDownloadInfo struct {
 	Codec           string `json:"codec"`
 	Gain            bool   `json:"gain"`
 	Preview         bool   `json:"preview"`
-	DownloadInfoUrl string `json:"downloadInfoUrl"`
-	Direct          bool   `json:"direct"`
-	BbitrateInKbps  int    `json:"bitrateInKbps"`
+	DownloadInfoUrl string  `json:"downloadInfoUrl"`
+	Direct          bool    `json:"direct"`
+	BbitrateInKbps  FlexInt `json:"bitrateInKbps"`
 }
 
 type SearchType string
@@ -534,14 +534,14 @@ type SearchSuggest struct {
 }
 
 type TrackLyrics struct {
-	DownloadUrl     string   `json:"downloadUrl"`
-	LyricId         string   `json:"lyricId"`
-	ExternalLyricId string   `json:"externalLyricId"`
+	DownloadUrl     string     `json:"downloadUrl"`
+	LyricId         FlexString `json:"lyricId"`
+	ExternalLyricId FlexString `json:"externalLyricId"`
 	Writers         []string `json:"writers"`
 	Major           struct {
-		Id         int    `json:"id"`
-		Name       string `json:"name"`
-		PrettyName string `json:"prettyName"`
+		Id         FlexInt `json:"id"`
+		Name       string  `json:"name"`
+		PrettyName string  `json:"prettyName"`
 	} `json:"major"`
 }
 

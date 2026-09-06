@@ -191,7 +191,7 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			m.filterInput.Focus()
 			return m, textinput.Blink
 		}
-		if len(keypress) == 1 && keypress[0] >= 32 && keypress[0] <= 126 && !controls.ShowAllKeys.Contains(keypress) {
+		if len(keypress) == 1 && keypress[0] >= 32 && keypress[0] <= 126 && !controls.ShowAllKeys.Contains(keypress) && !isReservedKey(controls, keypress) {
 			m.filterInput.Focus()
 			m.filterInput.SetValue(m.filterInput.Value() + keypress)
 			m.applyFilter()
@@ -355,4 +355,42 @@ func (m *Model) SetHeight(h int) {
 
 func (m *Model) Height() int {
 	return m.height
+}
+
+func isReservedKey(controls *config.Controls, keypress string) bool {
+	switch {
+	case controls.Quit.Contains(keypress),
+		controls.Apply.Contains(keypress),
+		controls.Cancel.Contains(keypress),
+		controls.CursorUp.Contains(keypress),
+		controls.CursorDown.Contains(keypress),
+		controls.Reload.Contains(keypress),
+		controls.PlaylistsUp.Contains(keypress),
+		controls.PlaylistsDown.Contains(keypress),
+		controls.PlaylistsRename.Contains(keypress),
+		controls.PlaylistsHide.Contains(keypress),
+		controls.PlaylistsRadio.Contains(keypress),
+		controls.PlayerPause.Contains(keypress),
+		controls.PlayerNext.Contains(keypress),
+		controls.PlayerPrevious.Contains(keypress),
+		controls.PlayerRewindForward.Contains(keypress),
+		controls.PlayerRewindBackward.Contains(keypress),
+		controls.PlayerLike.Contains(keypress),
+		controls.PlayerCache.Contains(keypress),
+		controls.PlayerVolUp.Contains(keypress),
+		controls.PlayerVolDown.Contains(keypress),
+		controls.PlayerToggleLyrics.Contains(keypress),
+		controls.PlayerHide.Contains(keypress),
+		controls.PlayerCacheAllLiked.Contains(keypress),
+		controls.PlayerDownload.Contains(keypress),
+		controls.PlayerMute.Contains(keypress),
+		controls.PlayerQualityCycle.Contains(keypress),
+		controls.PlayerRepeatMode.Contains(keypress),
+		controls.PlayerSleepTimer.Contains(keypress),
+		controls.PlayerDislike.Contains(keypress),
+		controls.KeysHelp.Contains(keypress),
+		controls.TracksSearchTab.Contains(keypress):
+		return true
+	}
+	return false
 }

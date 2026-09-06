@@ -1,5 +1,13 @@
 .vscode/
+.idea/
 *.exe
 yamusic
 yamusic-tui
-.idea/
+wellya
+wellmusic
+well-ya
+*.log
+*.test
+/tmp/
+api_test_manual*.go
+test_api*.go

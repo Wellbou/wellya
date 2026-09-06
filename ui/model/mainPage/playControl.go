@@ -304,7 +304,7 @@ func (m *Model) playTrack(track *api.Track) {
 				continue
 			}
 			bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
-			m.tracker.SetBitrate(bestTrackInfo.BbitrateInKbps)
+			m.tracker.SetBitrate(int(bestTrackInfo.BbitrateInKbps))
 			tr2, ts2, derr := m.client.DownloadTrack(bestTrackInfo)
 			if derr != nil {
 				log.Print(log.LVL_ERROR, "failed to download track [%s]: %s", track.Id, derr)

@@ -1,78 +1,56 @@
-# WellYaMusic CLI — `wellya`
+# wellya
 
 [![GitHub License](https://img.shields.io/github/license/wellbou/wellya)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/wellbou/wellya)](https://goreportcard.com/report/github.com/wellbou/wellya)
 
-> **Форк** [yamusic-tui](https://github.com/DECE2183/yamusic-tui) в стиле экосистемы [wellutils](https://github.com/wellbou/wellutils) - `wellutils`, `wellya`, `wellsensors` единый бренд.
-
-An unofficial Yandex Music terminal client with purple theme and extended features.<br>
-Based on [yandex-music-open-api](https://github.com/acherkashin/yandex-music-open-api) and `Dece2183/yamusic-tui`.
+A Yandex Music terminal client. Fork of [yamusic-tui](https://github.com/DECE2183/yamusic-tui) with extra features and fixes.<br>
+Based on [yandex-music-open-api](https://github.com/acherkashin/yandex-music-open-api).
 
 ![screenshot](.assets/screenshot.png)
 
-### Well-семейство
-
-```bash
-wellutils  # →  wellfetch / wellper / wellgpu / wellsensors / wellya
-wellya     # Yandex Music в терминале, фиолетовый стиль #AB47BC
-```
-
-Все утилиты `well*` ставятся как `wellutils --self-update` и `go install github.com/wellbou/wellya@latest`.
-
 ### Requirements
 
-Valid Yandex Music account + access token. Самый простой способ — расширение браузера ([Chrome](https://chrome.google.com/webstore/detail/yandex-music-token/lcbjeookjibfhjjopieifgjnhlegmkib), [Firefox](https://addons.mozilla.org/en-US/firefox/addon/yandex-music-token/)).
+A valid Yandex Music account and an access token. The easiest way to get a token is a browser extension ([Chrome](https://chrome.google.com/webstore/detail/yandex-music-token/lcbjeookjibfhjjopieifgjnhlegmkib), [Firefox](https://addons.mozilla.org/en-US/firefox/addon/yandex-music-token/)).
 
-### Что нового в форке vs оригинал
+### Features
 
-- [x] Фиолетовая тема `#AB47BC` / `#2C1A4A` / `#4A148C`
-- [x] **Удалить из очереди** — `X` (локально, без API `UnlikeTrack`)
-- [x] **M3U экспорт** — `E` → `~/Music/wellya/<playlist>.m3u` (`#EXTM3U` + `#EXTINF` + `https://music.yandex.ru/...`)
-- [x] **Загрузка локальных файлов** — `U` → ввод пути `~/Music/file.mp3` или директории, парсинг ID3, кэш в `~/.cache/wellya`, добавление в `Cached tracks` (поддержка UGC/OWN — Yamaha хранит как `trackSource:"UGC"`)
-- [x] Версия в футтере `dev-queue-m3u`
-- [x] Остальные фичи форка (см. ниже) — повтор, мьют, станции, битрейт, история, jump-to-playing, тосты, таймер сна, артист-брауз, очередь, фильтры поиска, инфо, go-to-album, дизлайк, релоад конфига, номера треков, счётчик проигрываний, сортировка, фильтр
+- Player: play/pause, next/previous track, progress bar, rewind, volume, mute (`m`)
+- Repeat modes (`r`): off / all / one. Sleep timer (`n`): 15 to 120 minutes
+- Like/unlike (`l` / `L`), dislike (`d` / `D`), share link copy (`ctrl+s`)
+- Synced lyrics (`t`), audio quality switch (`q`): best / high / medium / low with bitrate display
+- Track caching (`S`), cache all liked tracks (`C`), download to file (`ctrl+w`)
+- Tabs: Playlists, Radio (`R`), Search (`S`)
+- My Wave stays in the main list; all other stations live on the Radio tab
+- Listening history (last 100 tracks), play queue view (`tab`), jump to playing (`N`)
+- Artist browse from track (`i`), go to album (`A`), track info (`I`)
+- Remove from queue without unliking (`X`), move tracks (`ctrl+u` / `ctrl+d`)
+- Sort (`s`): title / artist / duration. Inline playlist filter (`/` or just type, `esc` clears)
+- Global search tab: `enter` plays now, `p` enqueues as next
+- Playlist export to M3U (`E`), local file import (`U`): MP3/M3U files or folders
+- Stats toast (`ctrl+g`), toast notifications, delete confirmations (`y`/`n`)
+- Full hotkey reference modal (`F1`), every key rebindable in config
+- Resilient API parsing: the client tolerates Yandex returning numbers as strings and back
 
-### Implemented features (полный список)
-
- - [x] Player
-    - [x] Play/pause, next/prev, progress, rewind, volume, mute (`m`), repeat (`r` OFF/ALL/1), sleep timer (`n`)
-    - [x] Like/unlike (`l`/`L`), dislike (`d`/`D` → `EV_TRACK_DISLIKED`), share (`ctrl+s` → `ShareTrackLink`)
-    - [x] Synced lyrics (`t`), битрейт (`q` → best/high/medium/low + `320k`)
-    - [x] Cache / download (`S`/`C`/`ctrl+w` → `~/Music/wellya`)
- - [x] Radio
-    - [x] My wave + **все станции** (`Stations()` → `STATION` плейлист, rotor `RotorSessionTracks`)
- - [x] Likes / History
-    - [x] Liked tracks, liked albums, **History** (100, dedup), Artist browse (`i` → `ArtistPopularTracks`)
- - [x] Playlists
-    - [x] Display user playlists, play, add/remove (`a`/`ctrl+a`), create/remove/rename (`ctrl+r`)
-    - [x] Move (`ctrl+u`/`ctrl+d`), shuffle (`ctrl+x`), sort (`s` → title/artist/duration), filter (`/`), page (`pgup/pgdown`)
-    - [x] Queue (`tab` → Up Next), jump to playing (`N`), track info (`I`), go to album (`A`)
-    - [x] **Remove from queue only** (`X`), **Export M3U** (`E`), **Upload local MP3** (`U`)
-    - [x] Total duration `[H:MM:SS]` в заголовке, счётчик треков `(42)` в сайдбаре, `x5` playcount
- - [x] Search (`ctrl+f`) + фильтры `tab` All/Tracks/Albums/Artists/Playlists
- - [x] Caching (race/sentinel/двойной `Seek` фиксы), прокси `httpClient.Do`
-
-## Installation
+### Installation
 
 ```bash
-# как утилита well-семейства
 go install github.com/wellbou/wellya@latest
-# бинарь будет как `wellya` и `wellmusic` (alias)
-sudo install -m 755 ~/go/bin/wellya /usr/local/bin/wellya
-sudo ln -sf /usr/local/bin/wellya /usr/local/bin/wellmusic
+```
 
-# или собрать локально
+Or build locally:
+
+```bash
 git clone https://github.com/wellbou/wellya
 cd wellya
 go build -o wellya .
 ./wellya
 ```
 
-Также `wellutils` подтянет `wellya` при `wellutils --self-update` (если настроен).
+To update: run `go install github.com/wellbou/wellya@latest` again.
 
-## Configuration
+### Configuration
 
-Файл теперь `~/.config/wellya/config.yaml` (миграция со старого `~/.config/yamusic-tui/config.yaml` автоматическая).
+The config file is `~/.config/wellya/config.yaml`. It is created with defaults on first run. A config from `~/.config/yamusic-tui/config.yaml` is picked up automatically if present.
 
 ```yaml
 token: <your yandex music token>
@@ -86,7 +64,7 @@ audio-quality: best # best/high/medium/low
 cache-tracks: likes # none/likes/all
 cache-dir: ""
 download-dir: "" # default ~/Music/wellya
-proxy: ""
+proxy: "" # proxy URL; falls back to HTTP_PROXY and HTTPS_PROXY
 search:
     artists: true
     albums: false
@@ -97,11 +75,14 @@ controls:
     cancel: esc
     cursor-up: up
     cursor-down: down
+    reload: ctrl+\
     show-all-keys: ?
+    keys-help: f1
     playlists-up: ctrl+up
     playlists-down: ctrl+down
     playlists-rename: ctrl+r
     playlists-hide: ctrl+b
+    playlists-radio: R
     tracks-next-page: pgup
     tracks-previous-page: pgdown
     tracks-like: l
@@ -110,9 +91,12 @@ controls:
     tracks-remove-from-queue: X
     tracks-export: E
     tracks-upload: U
+    tracks-stats: ctrl+g
+    tracks-play-next: p
     tracks-share: ctrl+s
     tracks-shuffle: ctrl+x
     tracks-search: ctrl+f
+    tracks-search-tab: S
     tracks-back: backspace
     tracks-hide: ctrl+t
     tracks-move-up: ctrl+u
@@ -143,61 +127,28 @@ controls:
     player-repeat-mode: r
     player-sleep-timer: n
     player-dislike: D
-    reload: ctrl+\
-style:
-    volume-indicator-width: 16
-    volume-indicator-autohide-at: 58
-    side-panel-width: 32
-    side-panel-autohide-at: 96
-    search-modal-width: 56
-    icons:
-        play: ▶
-        stop: ■
-        liked: 💛
-        not-liked: 🤍
-        cached: 💿
-        lyrics-dot: •
-        volume-off: 🔇
-        volume-low: 🔈
-        volume-mid: 🔉
-        volume-high: 🔊
-    colors:
-        accent: '#AB47BC'
-        error: '#E91E63'
-        border: '#6A1B9A'
-        background: '#2C1A4A'
-        playlist-selection: '#4A148C'
-        active-text: '#EDE7F6'
-        normal-text: '#D1C4E9'
-        inactive-text: '#7E57C2'
-        track-title-text: '#E1BEE7'
-        track-version-text: '#B39DDB'
-        track-artist-text: '#CE93D8'
-        lyrics-previous: '#4A148C'
-        lyrics-current: '#E040FB'
-        lyrics-next: '#7B1FA2'
 ```
 
-Кэш по умолчанию `~/.cache/wellya` (Linux) / `~/AppData/Local/wellya` (Windows).
+Multiple keys per action are allowed, separated by commas.
 
-### Загрузка своих треков (UGC)
+Cached tracks go to the system cache directory (`~/.cache/wellya` on Linux) unless `cache-dir` is set. Increase `buffer-size-ms` if playback stutters.
 
-Яндекс Музыка поддерживает `trackSource: "UGC"` / `"OWN"` — загруженные MP3 хранятся как `storageDir: "247309_u/..."`, `desiredVisibility:"private"`, `canPublish:false`.
+### Local files
 
-В `wellya` это эмулируется локально без API-загрузки:
+Press `U` and enter a path to an MP3/M3U file or a folder. Files are parsed for ID3 tags, copied into the cache and added to Cached tracks, ready to play. Yandex-side upload is not supported by the API, so this stays local. Use the Yandex Music website to upload tracks to your cloud library.
 
-1. `U` → ввод `~/Music/my.mp3` или `~/Music/Album/` (рекурсивно `.mp3/.flac/.ogg/.m4a`)
-2. Парсинг ID3 (`github.com/bogem/id3v2`) → `title/artist/album/genre/year/TLEN`
-3. `id = local_<sha1(path+modtime+size)[:8]>`, `cache.Write(id)` + `writeTrackID3Tag` + `io.Copy`
-4. Добавление в `Cached tracks` (`playlist.LOCAL`), сразу играбельно ( `cache.Read(id)` в `playControl.go:288` )
+### System media controls
 
-Для выгрузки в облако Яндекса используй веб-интерфейс `music.yandex.ru` → Коллекция → Загрузить трек.
+![win11-smtc-example](.assets/smtc-win11.png)
 
-## System media controls
-
-MPRIS (Linux), SMTC (Windows), MPRemoteCommandCenter (macOS). Отключается `go build -tags='nomedia'`.
+MPRIS on Linux, SMTC on Windows, MPRemoteCommandCenter on macOS. Disable by building with the `nomedia` tag:
 
 ```bash
 go build -tags='nomedia' -o wellya .
-go build -ldflags="-linkmode=external" -o wellya . # macOS 15+
+```
+
+On macOS the binary needs an external linker for the media keys to work:
+
+```bash
+go build -ldflags="-linkmode=external" -o wellya .
 ```

@@ -12,6 +12,7 @@ import (
 	"github.com/wellbou/wellya/log"
 	"github.com/wellbou/wellya/media/handler"
 	"github.com/wellbou/wellya/ui/components/input"
+	"github.com/wellbou/wellya/ui/components/help"
 	"github.com/wellbou/wellya/ui/components/playlist"
 	"github.com/wellbou/wellya/ui/components/search"
 	"github.com/wellbou/wellya/ui/components/tracker"
@@ -26,7 +27,7 @@ import (
 	"github.com/dece2183/go-clipboard"
 )
 
-const AppVersion = "dev-search-tab"
+const AppVersion = "dev-help-modal"
 
 type Model struct {
 	program       *tea.Program
@@ -45,6 +46,7 @@ type Model struct {
 
 	searchDialog           *search.Model
 	inputDialog            *input.Model
+	helpDialog             *help.Model
 	isLoading              bool
 	isSearchActive         bool
 	isAddPlaylistActive    bool
@@ -95,12 +97,13 @@ func New(mediaHandler handler.MediaHandler) *Model {
 	m.cachedTracksMap = make(map[string]bool)
 	m.historyTracks = make([]api.Track, 0, 100)
 	m.spinner = spinner.New(spinner.WithSpinner(spinner.Points))
-	m.playlists = playlist.New(m.program, "YaMusic")
+	m.playlists = playlist.New(m.program, "WellYa")
 	m.radioPlaylists = playlist.New(m.program, "Radio")
 	m.tracklist = tracklist.New(m.program, &m.likedTracksMap, &m.cachedTracksMap)
 	m.tracker = tracker.New(m.program, &m.likedTracksMap)
 	m.searchDialog = search.New()
 	m.inputDialog = input.New()
+	m.helpDialog = help.New()
 
 	return m
 }
@@ -230,6 +233,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.toggleRadioTab()
 		case controls.TracksSearchTab.Contains(keypress):
 			m.toggleSearchTab()
+		case controls.KeysHelp.Contains(keypress):
+			m.helpDialog.Show()
 		case controls.Reload.Contains(keypress):
 			config.InitialLoad()
 			m.isLoading = true
@@ -489,6 +494,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.isLoading {
 			m.spinner, cmd = m.spinner.Update(message)
 			cmds = append(cmds, cmd)
+		} else if m.helpDialog.Visible() {
+			m.helpDialog, cmd = m.helpDialog.Update(message)
+			cmds = append(cmds, cmd)
 		} else if m.isSearchTab {
 			m.searchDialog, cmd = m.searchDialog.Update(message)
 			cmds = append(cmds, cmd)
@@ -575,6 +583,10 @@ func (m *Model) View() string {
 	versionLabel := style.TrackVersionStyle.Render(" " + AppVersion + " ")
 	mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, versionLabel)
 
+	if m.helpDialog.Visible() {
+		return m.helpDialog.View()
+	}
+
 	if m.toastMessage != "" {
 		toast := style.ToastBoxStyle.Render(style.ToastTextStyle.Render(m.toastMessage))
 		toastOverlay := lipgloss.Place(m.width, 1, lipgloss.Center, lipgloss.Bottom, toast)
@@ -589,6 +601,7 @@ func (m *Model) resize(width, height int) {
 
 	m.playlists.SetSize(style.SidePanelWidth, height-4)
 	m.radioPlaylists.SetSize(style.SidePanelWidth, height-4)
+	m.helpDialog.SetSize(width, height)
 	if !m.isPlaylistHideOverride {
 		hide := m.width < style.SidePanelAutohide
 		m.playlists.Hidden = hide

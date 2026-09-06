@@ -33,6 +33,10 @@ func (k *Key) Help(help string) key.BindingOpt {
 	return key.WithHelp(k.displayName, help)
 }
 
+func (k *Key) Display() string {
+	return k.displayName
+}
+
 func (k *Key) Contains(keyName string) bool {
 	return slices.Contains(k.keyNames, keyName)
 }
