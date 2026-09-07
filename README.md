@@ -1,8 +1,10 @@
 <p align="center">
-  <img src=".assets/logo.png" width="200" alt="wellya logo">
+  <img src=".assets/banner.png" width="800" alt="wellya banner">
 </p>
 
-# wellya
+# <img src=".assets/logo.png" width="48" alt="wellya logo"> wellya
+
+[Читать на русском](README.ru.md)
 
 [![GitHub License](https://img.shields.io/github/license/wellbou/wellya)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/wellbou/wellya)](https://goreportcard.com/report/github.com/wellbou/wellya)
@@ -68,6 +70,7 @@ audio-quality: best # best/high/medium/low
 cache-tracks: likes # none/likes/all
 cache-dir: ""
 download-dir: "" # default: XDG music dir (~/Music or ~/Музыка)
+resume-on-start: true # restore queue, track and position on launch
 proxy: "" # proxy URL; falls back to HTTP_PROXY and HTTPS_PROXY
 search:
     artists: true
@@ -87,10 +90,12 @@ controls:
     playlists-rename: ctrl+r
     playlists-hide: ctrl+b
     playlists-radio: R
+    playlists-share: Y
     tracks-page-up: pgup
     tracks-page-down: pgdown
     tracks-like: l
     tracks-add-to-playlist: a
+    tracks-quick-add: y
     tracks-remove-from-playlist: ctrl+a
     tracks-remove-from-queue: X
     tracks-export: E
@@ -119,7 +124,7 @@ controls:
     player-rewind-forward: ctrl+right
     player-rewind-backward: ctrl+left
     player-like: L
-    player-cache: S
+    player-cache: c
     player-vol-up: +,=
     player-vol-down: '-'
     player-toggle-lyrics: t
