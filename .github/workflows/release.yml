@@ -23,63 +23,63 @@ jobs:
     - name: Download dependencies
       run: go mod vendor
     - name: Pack vendor dir
-      run: tar -czf yamusic-tui-vendor.tar.gz ./vendor
+      run: tar -czf wellya-vendor.tar.gz ./vendor
     - name: Upload vendor archive
       uses: svenstaro/upload-release-action@v2
       with:
-        file: yamusic-tui-vendor.tar.gz
+        file: wellya-vendor.tar.gz
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         tag: ${{ github.ref }}
         overwrite: true
 
     - name: Build linux-amd64
-      run: go build -trimpath -ldflags="-w -s" -o yamusic
+      run: go build -trimpath -ldflags="-w -s -X github.com/wellbou/wellya/ui/model/mainPage.AppVersion=${{ github.ref_name }}" -o wellya
       env:
         GOOS: linux
         GOARCH: amd64
     - name: Upload linux-amd64
       uses: svenstaro/upload-release-action@v2
       with:
-        file: yamusic
+        file: wellya
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         tag: ${{ github.ref }}
         overwrite: true
 
     - name: Build linux-amd64-nomedia
-      run: go build -trimpath -ldflags="-w -s" -tags=nomedia -o yamusic-nomedia
+      run: go build -trimpath -ldflags="-w -s -X github.com/wellbou/wellya/ui/model/mainPage.AppVersion=${{ github.ref_name }}" -tags=nomedia -o wellya-nomedia
       env:
         GOOS: linux
         GOARCH: amd64
     - name: Upload linux-amd64-nomedia
       uses: svenstaro/upload-release-action@v2
       with:
-        file: yamusic-nomedia
+        file: wellya-nomedia
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         tag: ${{ github.ref }}
         overwrite: true
 
     - name: Build windows-amd64
-      run: go build -trimpath -ldflags="-w -s" -o yamusic.exe
+      run: go build -trimpath -ldflags="-w -s -X github.com/wellbou/wellya/ui/model/mainPage.AppVersion=${{ github.ref_name }}" -o wellya.exe
       env:
         GOOS: windows
         GOARCH: amd64
     - name: Upload windows-amd64
       uses: svenstaro/upload-release-action@v2
       with:
-        file: yamusic.exe
+        file: wellya.exe
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         tag: ${{ github.ref }}
         overwrite: true
 
     - name: Build windows-amd64-nomedia
-      run: go build -trimpath -ldflags="-w -s" -tags=nomedia -o yamusic-nomedia.exe
+      run: go build -trimpath -ldflags="-w -s -X github.com/wellbou/wellya/ui/model/mainPage.AppVersion=${{ github.ref_name }}" -tags=nomedia -o wellya-nomedia.exe
       env:
         GOOS: windows
         GOARCH: amd64
     - name: Upload windows-amd64
       uses: svenstaro/upload-release-action@v2
       with:
-        file: yamusic-nomedia.exe
+        file: wellya-nomedia.exe
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         tag: ${{ github.ref }}
         overwrite: true

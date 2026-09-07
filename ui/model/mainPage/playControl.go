@@ -300,11 +300,17 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 		}
 	}()
 
-	if track.LyricsInfo.HasAvailableSyncLyrics && client != nil {
+	lyricsFormat := ""
+	if track.LyricsInfo.HasAvailableSyncLyrics {
+		lyricsFormat = "LRC"
+	} else if track.LyricsInfo.HasAvailableTextLyrics {
+		lyricsFormat = "TEXT"
+	}
+	if lyricsFormat != "" && client != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			lyr, lerr := client.TrackLyricsRequest(string(track.Id))
+			lyr, lerr := client.TrackLyricsRequest(string(track.Id), lyricsFormat)
 			if lerr != nil {
 				log.Print(log.LVL_WARNING, "failed to obtain track [%s] lyrics: %s", track.Id, lerr)
 				lyricErr = lerr
@@ -504,6 +510,40 @@ func selectBestDownloadInfo(infos []api.TrackDownloadInfo, quality config.AudioQ
 	default:
 		return sorted[0]
 	}
+}
+
+func id3v2Size(header []byte) int {
+	if len(header) < 10 || string(header[:3]) != "ID3" {
+		return 0
+	}
+	for i := 6; i < 10; i++ {
+		if header[i]&0x80 != 0 {
+			return 0
+		}
+	}
+	total := 10 + (int(header[6])<<21 | int(header[7])<<14 | int(header[8])<<7 | int(header[9]))
+	if header[5]&0x10 != 0 {
+		total += 10
+	}
+	return total
+}
+
+func copyAudioWithoutID3(dst io.Writer, src io.Reader) (int64, error) {
+	header := make([]byte, 10)
+	n, err := io.ReadFull(src, header)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return 0, err
+	}
+	header = header[:n]
+	skip := id3v2Size(header)
+	if skip > 0 {
+		if _, err := io.CopyN(io.Discard, src, int64(skip-10)); err != nil {
+			return 0, err
+		}
+	} else if _, err := dst.Write(header); err != nil {
+		return 0, err
+	}
+	return io.Copy(dst, src)
 }
 
 func writeTrackID3Tag(file *os.File, track *api.Track, coverBytes []byte, coverType string) {

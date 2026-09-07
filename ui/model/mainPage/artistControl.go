@@ -65,6 +65,11 @@ func (m *Model) fetchArtistTracks(client *api.YaMusicClient, artist api.Artist) 
 
 func (m *Model) applyBrowsedItem(item *playlist.Item) {
 	active := m.activePlaylists()
+	m.navStack = append(m.navStack, navPos{isRadio: m.isRadioTab, index: active.Index()})
+	if len(m.navStack) > 32 {
+		m.navStack = m.navStack[len(m.navStack)-32:]
+	}
+	item.Browsed = true
 	playlists := active.Items()
 	insertIndex := active.Index() + 1
 	for i := insertIndex; i < len(playlists); i++ {
@@ -78,9 +83,9 @@ func (m *Model) applyBrowsedItem(item *playlist.Item) {
 	}
 
 	active.InsertItem(insertIndex, item)
-
-	if insertIndex <= active.Index() {
-		active.Select(active.Index() + 1)
+	active.Select(insertIndex)
+	if active == m.currentPlaylists() && insertIndex <= m.currentPlaylistIndex {
+		m.currentPlaylistIndex++
 	}
 
 	m.displayPlaylist(item)

@@ -84,6 +84,10 @@ func (m *Model) initialLoad() {
 func (m *Model) applyInitialLoad(d initialLoadDoneMsg) {
 	m.client = d.client
 	m.tracker.HideError()
+	m.offline = d.client == nil
+	if m.offline {
+		m.playlists.InsertItem(-1, playlist.ItemCategory("offline — check token in ~/.config/wellya"))
+	}
 
 	myWaveMenuBlock := d.myWaveMenuBlock
 	stationsMenuBlock := d.stationsMenuBlock
@@ -119,6 +123,9 @@ func (m *Model) applyInitialLoad(d initialLoadDoneMsg) {
 	if likedAlbumsMenuBlock.err == nil {
 		for _, item := range likedAlbumsMenuBlock.items {
 			m.playlists.InsertItem(-1, item)
+			for i := range item.Albums {
+				m.likedAlbumsMap[uint64(item.Albums[i].Id)] = true
+			}
 		}
 	} else {
 		log.Print(log.LVL_ERROR, "failed to obtain liked albums: %s", likedAlbumsMenuBlock.err)
@@ -134,8 +141,6 @@ func (m *Model) applyInitialLoad(d initialLoadDoneMsg) {
 		m.Send(errorToastMsg{reason: "pinned albums"})
 	}
 
-	m.playlists.InsertItem(-1, playlist.ItemEmpty())
-	m.playlists.InsertItem(-1, playlist.ItemCategory("playlists:"))
 	if userPlaylistsMenuBlock.err == nil {
 		for _, item := range userPlaylistsMenuBlock.items {
 			m.playlists.InsertItem(-1, item)

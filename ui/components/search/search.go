@@ -199,9 +199,13 @@ func (m *Model) captureSelected(playNext bool) {
 	if t := m.pickSelectedTrack(); t != nil {
 		m.selectedTrack = t
 		m.value = string(t.Id)
+		return
+	}
+	m.selectedTrack = nil
+	if it, ok := m.list.SelectedItem().(Item); ok && it.Label != "" {
+		m.value = it.Label
 	} else {
-		m.value = ""
-		m.selectedTrack = nil
+		m.value = strings.TrimSpace(m.input.Value())
 	}
 }
 

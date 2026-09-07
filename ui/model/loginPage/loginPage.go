@@ -1,6 +1,8 @@
 package loginpage
 
 import (
+	"errors"
+
 	"github.com/wellbou/wellya/config"
 	"github.com/wellbou/wellya/ui/style"
 
@@ -10,8 +12,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+var ErrQuitLogin = errors.New("login cancelled by user")
+
 type Model struct {
 	err           error
+	quit          bool
 	program       *tea.Program
 	width, height int
 
@@ -41,6 +46,9 @@ func (m *Model) Run() error {
 	_, err := m.program.Run()
 	if err != nil {
 		return err
+	}
+	if m.quit {
+		return ErrQuitLogin
 	}
 	if m.err != nil {
 		return m.err
@@ -73,6 +81,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case controls.Quit.Contains(keypress):
+			m.quit = true
 			return m, tea.Quit
 		case controls.Apply.Contains(keypress):
 			config.Current.Token = m.input.Value()

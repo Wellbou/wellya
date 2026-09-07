@@ -47,6 +47,7 @@ const (
 	UPLOAD
 	STATS
 	PLAY_NEXT
+	QUICK_ADD
 )
 
 type Model struct {
@@ -79,8 +80,8 @@ func New(p *tea.Program, likesMap *map[string]bool, cacheMap *map[string]bool) *
 	m.list.KeyMap = list.KeyMap{
 		CursorUp:   key.NewBinding(controls.CursorUp.Binding(), controls.CursorUp.Help("up")),
 		CursorDown: key.NewBinding(controls.CursorDown.Binding(), controls.CursorDown.Help("down")),
-		NextPage:   key.NewBinding(controls.TracksPrevPage.Binding(), controls.TracksPrevPage.Help("next page")),
-		PrevPage:   key.NewBinding(controls.TracksNextPage.Binding(), controls.TracksNextPage.Help("prev page")),
+		NextPage:   key.NewBinding(controls.TracksPageDown.Binding(), controls.TracksPageDown.Help("next page")),
+		PrevPage:   key.NewBinding(controls.TracksPageUp.Binding(), controls.TracksPageUp.Help("prev page")),
 	}
 	m.list.Paginator.KeyMap.NextPage.SetEnabled(false)
 	m.list.Paginator.KeyMap.PrevPage.SetEnabled(false)
@@ -225,7 +226,7 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			cmds = append(cmds, model.Cmd(CURSOR_UP))
 		case controls.CursorDown.Contains(keypress):
 			cmds = append(cmds, model.Cmd(CURSOR_DOWN))
-		case controls.TracksNextPage.Contains(keypress):
+		case controls.TracksPageUp.Contains(keypress):
 			if len(m.list.Items()) > 0 {
 				pageSize := m.list.Height() / 3
 				if pageSize < 1 {
@@ -238,7 +239,7 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 				m.list.Select(newIdx)
 				cmds = append(cmds, model.Cmd(PAGE_UP))
 			}
-		case controls.TracksPrevPage.Contains(keypress):
+		case controls.TracksPageDown.Contains(keypress):
 			if len(m.list.Items()) > 0 {
 				pageSize := m.list.Height() / 3
 				if pageSize < 1 {
@@ -294,6 +295,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			cmds = append(cmds, model.Cmd(UPLOAD))
 		case controls.TracksStats.Contains(keypress):
 			cmds = append(cmds, model.Cmd(STATS))
+		case controls.TracksQuickAdd.Contains(keypress):
+			cmds = append(cmds, model.Cmd(QUICK_ADD))
 		case controls.TracksPlayNext.Contains(keypress):
 			cmds = append(cmds, model.Cmd(PLAY_NEXT))
 		}

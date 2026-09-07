@@ -163,8 +163,8 @@ func (m *Model) Lines() []string {
 		{"Tracklist", []entry{
 			{keyName(c.CursorUp, "↑"), "Move cursor up"},
 			{keyName(c.CursorDown, "↓"), "Move cursor down"},
-			{keyName(c.TracksNextPage, "pgup"), "Page up"},
-			{keyName(c.TracksPrevPage, "pgdn"), "Page down"},
+			{keyName(c.TracksPageUp, "pgup"), "Page up"},
+			{keyName(c.TracksPageDown, "pgdn"), "Page down"},
 			{keyName(c.Apply, "enter"), "Play / pause current"},
 			{keyName(c.TracksLike, "l"), "Like selected track"},
 			{keyName(c.TracksDislike, "d"), "Dislike selected"},

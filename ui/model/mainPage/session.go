@@ -135,6 +135,9 @@ func (m *Model) restoreSession() {
 	m.displayPlaylist(pl)
 	m.tracklist.Select(idx)
 
+	if !config.Current.ResumeOnStart {
+		return
+	}
 	pos := s.PositionMs
 	if dur := int64(pl.Tracks[idx].DurationMs); pos < 0 || pos >= dur-1000 {
 		pos = 0

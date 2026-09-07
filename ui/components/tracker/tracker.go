@@ -319,7 +319,6 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 
 		case controls.PlayerCache.Contains(keypress):
 			if !m.IsStoped() {
-				m.trackWrapper.Buffer().BufferAll()
 				cmds = append(cmds, model.Cmd(CACHE_TRACK))
 			}
 
@@ -378,8 +377,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			if m.sleepTimerRemaining <= 0 {
 				m.sleepTimerRemaining = 0
 				m.sleepTimerActive = false
-				m.Stop()
-				cmds = append(cmds, model.Cmd(STOP))
+				m.Pause()
+				cmds = append(cmds, model.Cmd(PAUSE))
 			} else {
 				cmds = append(cmds, m.sleepTickCmd())
 			}
@@ -700,12 +699,26 @@ func (m *Model) volumeFadeTick() {
 }
 
 func (m *Model) lyricsVisible() bool {
-	return m.player != nil && m.showLyrics && m.track.LyricsInfo.HasAvailableSyncLyrics && len(m.lyrics) > 0
+	return m.player != nil && m.showLyrics && len(m.lyrics) > 0 &&
+		(m.track.LyricsInfo.HasAvailableSyncLyrics || m.track.LyricsInfo.HasAvailableTextLyrics)
 }
 
 func (m *Model) renderLyrics() string {
 	if !m.lyricsVisible() {
 		return ""
+	}
+
+	if len(m.lyrics) > 0 && m.lyrics[0].Timestamp < 0 {
+	 shown := m.lyrics
+		if len(shown) > 7 {
+			shown = shown[:7]
+		}
+		static := make([]string, 0, len(shown))
+		for _, line := range shown {
+			static = append(static, style.TrackArtistStyle.Render(line.Line))
+		}
+		return lipgloss.NewStyle().Width(m.width - 4).AlignHorizontal(lipgloss.Center).Render(
+			lipgloss.JoinVertical(lipgloss.Center, static...))
 	}
 
 	currentLine := " "

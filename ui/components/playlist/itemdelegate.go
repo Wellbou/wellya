@@ -51,10 +51,10 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	nameLen := lipgloss.Width(name)
 
 	var trackCount string
-	if len(item.Tracks) > 0 {
-		trackCount = fmt.Sprintf(" (%d)", len(item.Tracks))
-	} else if len(item.Albums) > 0 {
+	if item.Kind == ALBUMS && len(item.Albums) > 0 {
 		trackCount = fmt.Sprintf(" (%d)", len(item.Albums))
+	} else if len(item.Tracks) > 0 {
+		trackCount = fmt.Sprintf(" (%d)", len(item.Tracks))
 	}
 
 	maxLen := m.Width() - 5

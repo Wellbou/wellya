@@ -7,6 +7,62 @@ import (
 	"github.com/wellbou/wellya/ui/components/playlist"
 )
 
+type albumLikeDoneMsg struct {
+	albumId uint64
+	title   string
+	unlike  bool
+}
+
+func (m *Model) likeSelectedAlbum() tea.Cmd {
+	if m.client == nil {
+		return nil
+	}
+	pl := m.activePlaylists().SelectedItem()
+	if len(pl.Albums) == 0 || len(m.tracklist.Items()) == 0 {
+		return nil
+	}
+	idx := m.tracklist.Index()
+	if sel := m.tracklist.SelectedItem(); sel.Album != nil {
+		for i := range pl.Albums {
+			if &pl.Albums[i] == sel.Album {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 || idx >= len(pl.Albums) {
+		return nil
+	}
+	albumId := uint64(pl.Albums[idx].Id)
+	name := pl.Albums[idx].Title
+	unlike := m.likedAlbumsMap[albumId]
+	client := m.client
+	go func() {
+		var err error
+		if unlike {
+			err = client.UnlikeAlbum(albumId)
+		} else {
+			err = client.LikeAlbum(albumId)
+		}
+		if err != nil {
+			log.Print(log.LVL_ERROR, "failed to like/unlike album [%d]: %s", albumId, err)
+			m.Send(errorToastMsg{reason: "album like failed"})
+			return
+		}
+		m.Send(albumLikeDoneMsg{albumId: albumId, title: name, unlike: unlike})
+	}()
+	return nil
+}
+
+func (m *Model) applyAlbumLike(albumId uint64, title string, unlike bool) tea.Cmd {
+	if unlike {
+		delete(m.likedAlbumsMap, albumId)
+		return m.ShowToast("album unliked: " + title)
+	}
+	m.likedAlbumsMap[albumId] = true
+	return m.ShowToast("album liked: " + title)
+}
+
 func (m *Model) likePlayingTrack() tea.Cmd {
 	var currentPlaylist *playlist.Item
 	currentPlaylist = m.currentPlaylist()

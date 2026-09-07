@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/config"
 	"github.com/wellbou/wellya/log"
@@ -20,12 +22,19 @@ func main() {
 		log.Print(log.LVL_WARNING, "config load error: %s", err.Error())
 	}
 
+	if w := config.CollisionWarnings(); w != "" {
+		log.Print(log.LVL_WARNING, w)
+	}
+
 	style.Apply(config.Current.Style)
 	api.SetupClient(config.Current.Proxy)
 
 	if config.Current.Token == "" {
 		err = loginpage.New().Run()
 		if err != nil {
+			if errors.Is(err, loginpage.ErrQuitLogin) {
+				return
+			}
 			log.Print(log.LVL_PANIC, err.Error())
 			model.PrettyExit(err, 4)
 		}

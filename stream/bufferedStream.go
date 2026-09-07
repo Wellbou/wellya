@@ -3,40 +3,52 @@ package stream
 import (
 	"errors"
 	"io"
-	"net/http"
 	"sync"
 	"time"
 )
 
 const (
-	_BUFFERING_AMOUNT = 32 * 1024
-	_BUFFERING_PERIOD = 100 * time.Millisecond
+	_BUFFERING_AMOUNT = 64 * 1024
+	_BUFFERING_PERIOD = 20 * time.Millisecond
 	_BUFFERING_MAX    = 512 << 20
 )
 
 var errOutOfSize = errors.New("position is out of data size")
 var errBufferTooLarge = errors.New("buffer exceeded size limit")
 
+// BufferedStream is a producer/consumer byte stream.
+//
+// A single background goroutine (bufferFrames) is the ONLY reader of
+// source and appends everything it reads to readBuffer. Consumers
+// (Read) only ever serve bytes from readBuffer and wait on a condvar
+// while data is on the way. As a result no caller ever blocks on the
+// network while holding the mutex, so UI-thread helpers
+// (Progress/Seek/IsDone/...) always return instantly.
 type BufferedStream struct {
-	source      io.ReadCloser
-	bufferTimer *time.Ticker
-	closed      chan bool
-	lastError   error
-	readBuffer  []byte
-	readIndex   int64
-	totalSize   int64
-	buffered    bool
-	done        bool
-	mux         sync.Mutex
+	source       io.ReadCloser
+	sourceClosed bool
+	bufferTimer  *time.Ticker
+	closed       chan bool
+	cond         *sync.Cond
+	lastError    error
+	readBuffer   []byte
+	readIndex    int64
+	totalSize    int64
+	buffered     bool
+	eof          bool
+	closedFlag   bool
+	done         bool
+	mux          sync.Mutex
 }
 
 func NewBufferedStream(source io.ReadCloser, totalSize int64) *BufferedStream {
 	rs := BufferedStream{
-		source:      source,
-		totalSize:   totalSize,
-		bufferTimer: time.NewTicker(_BUFFERING_PERIOD),
-		closed:      make(chan bool),
+		source:    source,
+		totalSize: totalSize,
 	}
+	rs.bufferTimer = time.NewTicker(_BUFFERING_PERIOD)
+	rs.closed = make(chan bool)
+	rs.cond = sync.NewCond(&rs.mux)
 
 	go rs.bufferFrames(_BUFFERING_AMOUNT)
 	return &rs
@@ -50,97 +62,64 @@ func (h *BufferedStream) Length() int64 {
 }
 
 func (h *BufferedStream) Close() error {
-	var err error
-
 	h.mux.Lock()
-	defer h.mux.Unlock()
-
-	h.readBuffer = nil
+	h.closedFlag = true
 	h.stopBuffering()
+	h.cond.Broadcast()
+	h.closeSourceLocked()
+	h.mux.Unlock()
+	return nil
+}
 
-	if !h.done {
-		err = h.source.Close()
-		h.done = true
+func (h *BufferedStream) closeSourceLocked() {
+	if h.sourceClosed {
+		return
 	}
-
-	return err
+	h.sourceClosed = true
+	_ = h.source.Close()
 }
 
 func (h *BufferedStream) finishLocked() {
-	if !h.done {
-		h.source.Close()
-		h.stopBuffering()
-		h.done = true
-	}
+	h.stopBuffering()
+	h.done = true
+	h.eof = true
+	h.closeSourceLocked()
+	h.cond.Broadcast()
 }
 
 func (h *BufferedStream) Read(dest []byte) (n int, err error) {
 	h.mux.Lock()
 	defer h.mux.Unlock()
 
-	readBufLen := int64(len(h.readBuffer))
-	destLen := int64(len(dest))
+	for {
+		if h.closedFlag {
+			return 0, io.EOF
+		}
 
-	if h.readIndex >= readBufLen {
-		if gap := h.readIndex - readBufLen; gap > 0 {
-			if _, derr := io.CopyN(io.Discard, h.source, gap); derr != nil {
-				h.lastError = derr
-				h.finishLocked()
-				return 0, io.EOF
+		readBufLen := int64(len(h.readBuffer))
+		if h.readIndex < readBufLen {
+			destLen := int64(len(dest))
+			endIndex := h.readIndex + destLen
+			if endIndex > readBufLen {
+				endIndex = readBufLen
 			}
-			h.readIndex = readBufLen
-		}
-		newFrame := make([]byte, destLen)
-		n, err = io.ReadFull(h.source, newFrame)
-		h.readBuffer = append(h.readBuffer, newFrame[:n]...)
-		if n > 0 {
-			copy(dest, h.readBuffer[h.readIndex:h.readIndex+int64(n)])
-		}
-		h.readIndex += int64(n)
-		if h.totalSize > 0 && h.readIndex >= h.totalSize {
-			err = io.EOF
-		}
-	} else {
-		endIndex := h.readIndex + destLen
-		if endIndex > readBufLen {
-			endIndex = readBufLen
-		}
-		bufferedPart := h.readBuffer[h.readIndex:endIndex]
-
-		if destLen-int64(len(bufferedPart)) > 0 {
-			unbufferedPart := make([]byte, destLen-int64(len(bufferedPart)))
-			unbufferedLen, rerr := h.source.Read(unbufferedPart)
-			unbufferedPart = unbufferedPart[:unbufferedLen]
-			err = rerr
-
-			copy(dest, append(bufferedPart, unbufferedPart...))
-			n = len(bufferedPart) + unbufferedLen
-			h.readBuffer = append(h.readBuffer, unbufferedPart...)
-		} else {
-			copy(dest, bufferedPart)
-			n = len(bufferedPart)
+			n = copy(dest, h.readBuffer[h.readIndex:endIndex])
+			h.readIndex += int64(n)
+			return n, nil
 		}
 
-		h.readIndex += int64(n)
-		if h.totalSize > 0 && h.readIndex >= h.totalSize {
-			err = io.EOF
-		}
-	}
-
-	if err != nil {
-		if err == io.EOF {
+		if h.done || h.eof || (h.totalSize > 0 && h.readIndex >= h.totalSize) {
 			h.finishLocked()
-		} else if err == http.ErrBodyReadAfterClose {
-			err = io.EOF
+			return 0, io.EOF
 		}
-	}
 
-	h.lastError = err
-	return
+		h.cond.Wait()
+	}
 }
 
 func (h *BufferedStream) Seek(offset int64, whence int) (pos int64, err error) {
 	h.mux.Lock()
+	defer h.mux.Unlock()
 
 	switch whence {
 	case io.SeekStart:
@@ -151,19 +130,15 @@ func (h *BufferedStream) Seek(offset int64, whence int) (pos int64, err error) {
 		pos = h.totalSize + offset
 	}
 
-	if pos < 0 || pos > h.totalSize {
+	if pos < 0 || (h.totalSize > 0 && pos > h.totalSize) {
 		pos = h.readIndex
 		err = errOutOfSize
 	} else {
-		if pos == h.totalSize {
-			h.done = true
-		} else {
-			h.done = false
-		}
+		h.done = h.totalSize > 0 && pos == h.totalSize
 		h.readIndex = pos
+		h.cond.Broadcast()
 	}
 
-	h.mux.Unlock()
 	return
 }
 
@@ -212,30 +187,6 @@ func (h *BufferedStream) BufferingProgress() float64 {
 	return float64(len(h.readBuffer)) / float64(h.totalSize)
 }
 
-func (h *BufferedStream) BufferAll() {
-	if h == nil {
-		return
-	}
-	h.mux.Lock()
-	defer h.mux.Unlock()
-
-	if h.buffered {
-		return
-	}
-
-	h.stopBuffering()
-
-	newFrame, err := io.ReadAll(h.source)
-	if err != nil {
-		h.lastError = err
-		return
-	}
-
-	h.readBuffer = append(h.readBuffer, newFrame...)
-	h.source.Close()
-	h.stopBuffering()
-}
-
 func (h *BufferedStream) WriteTo(dest io.Writer) (int64, error) {
 	h.mux.Lock()
 	snapshot := make([]byte, len(h.readBuffer))
@@ -264,38 +215,64 @@ func (h *BufferedStream) bufferFrames(size int64) {
 	for {
 		h.mux.Lock()
 
-		if h.buffered || (h.totalSize > 0 && h.totalSize <= int64(len(h.readBuffer))) || int64(len(h.readBuffer)) >= _BUFFERING_MAX {
-			if int64(len(h.readBuffer)) >= _BUFFERING_MAX {
+		if h.closedFlag || h.buffered ||
+			(h.totalSize > 0 && h.totalSize <= int64(len(h.readBuffer))) ||
+			int64(len(h.readBuffer)) >= _BUFFERING_MAX {
+			if int64(len(h.readBuffer)) >= _BUFFERING_MAX && !h.closedFlag {
 				h.lastError = errBufferTooLarge
+				h.eof = true
 			}
+			h.closeSourceLocked()
 			h.stopBuffering()
-			h.mux.Unlock()
-			return
-		}
-
-		buf := make([]byte, size)
-		n, err := io.ReadFull(h.source, buf)
-		if err == nil || err == io.EOF {
-			h.readBuffer = append(h.readBuffer, buf[:n]...)
-			if err == io.EOF {
-				h.stopBuffering()
-				h.mux.Unlock()
-				return
-			}
-		} else {
-			h.lastError = err
-			h.stopBuffering()
+			h.cond.Broadcast()
 			h.mux.Unlock()
 			return
 		}
 
 		h.mux.Unlock()
 
-		// await next Read call or timer expiration
+		buf := make([]byte, size)
+		n, err := io.ReadFull(h.source, buf)
+
+		h.mux.Lock()
+		if h.closedFlag {
+			h.mux.Unlock()
+			return
+		}
+		h.readBuffer = append(h.readBuffer, buf[:n]...)
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			h.eof = true
+			h.closeSourceLocked()
+			h.stopBuffering()
+			h.cond.Broadcast()
+			h.mux.Unlock()
+			return
+		}
+		if err != nil {
+			h.lastError = err
+			h.eof = true
+			h.closeSourceLocked()
+			h.stopBuffering()
+			h.cond.Broadcast()
+			h.mux.Unlock()
+			return
+		}
+		h.cond.Broadcast()
+		h.mux.Unlock()
+
+		h.mux.Lock()
+		if h.closedFlag {
+			h.mux.Unlock()
+			return
+		}
+		ch := h.closed
+		timerCh := h.bufferTimer.C
+		h.mux.Unlock()
+
 		select {
-		case <-h.bufferTimer.C:
+		case <-timerCh:
 			continue
-		case <-h.closed:
+		case <-ch:
 			return
 		}
 	}

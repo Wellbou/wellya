@@ -11,6 +11,7 @@ type helpKeyMap struct {
 	Rename        key.Binding
 	HidePlaylists key.Binding
 	Radio         key.Binding
+	Share         key.Binding
 	Renamable     bool
 }
 
@@ -22,6 +23,7 @@ func newHelpMap() *helpKeyMap {
 		Rename:        key.NewBinding(controls.PlaylistsRename.Binding(), controls.PlaylistsRename.Help("rename")),
 		HidePlaylists: key.NewBinding(controls.PlaylistsHide.Binding(), controls.PlaylistsHide.Help("hide")),
 		Radio:         key.NewBinding(controls.PlaylistsRadio.Binding(), controls.PlaylistsRadio.Help("radio")),
+		Share:         key.NewBinding(controls.PlaylistsShare.Binding(), controls.PlaylistsShare.Help("share")),
 	}
 }
 
@@ -39,7 +41,7 @@ func (k helpKeyMap) FullHelp() [][]key.Binding {
 		bindings = append(bindings, []key.Binding{k.Rename})
 	}
 
-	bindings = append(bindings, []key.Binding{k.HidePlaylists, k.Radio})
+	bindings = append(bindings, []key.Binding{k.HidePlaylists, k.Radio, k.Share})
 
 	return bindings
 }

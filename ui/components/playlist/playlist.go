@@ -19,6 +19,7 @@ const (
 	CURSOR_DOWN
 	RENAME
 	TOGGLE_VIEW
+	SHARE
 )
 
 type PlaylistType = uint64
@@ -141,6 +142,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 		case controls.PlaylistsHide.Contains(keypress):
 			m.Hidden = !m.Hidden
 			cmds = append(cmds, model.Cmd(TOGGLE_VIEW))
+		case controls.PlaylistsShare.Contains(keypress):
+			cmds = append(cmds, model.Cmd(SHARE))
 		}
 	}
 

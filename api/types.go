@@ -210,6 +210,28 @@ type Label struct {
 	Name string     `json:"name"`
 }
 
+func (l *Label) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		*l = Label{}
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err == nil {
+			*l = Label{Name: s}
+			return nil
+		}
+	}
+	type plainLabel Label
+	var pl plainLabel
+	if err := json.Unmarshal(data, &pl); err != nil {
+		return err
+	}
+	*l = Label(pl)
+	return nil
+}
+
 type Artist struct {
 	Id       FlexUint64 `json:"id"`
 	Name     string     `json:"name"`

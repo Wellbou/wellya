@@ -266,6 +266,10 @@ func Token(username, password string) (token string, err error) {
 	return
 }
 
+func SharePlaylistLink(userId, kind uint64) string {
+	return fmt.Sprintf("https://music.yandex.ru/users/%d/playlists/%d", userId, kind)
+}
+
 func ShareTrackLink(track *Track) string {
 	if track == nil || len(track.Albums) == 0 {
 		return ""
@@ -371,6 +375,10 @@ func (client *YaMusicClient) RemoveFromPlaylist(kind uint64, revision, pos int) 
 func (client *YaMusicClient) ListPlaylists() (playlists []Playlist, err error) {
 	playlists, _, err = getRequest[[]Playlist](client.token, fmt.Sprintf("/users/%d/playlists/list", client.userid), nil)
 	return
+}
+
+func (client *YaMusicClient) UserID() uint64 {
+	return client.userid
 }
 
 func (client *YaMusicClient) Playlist(kind uint64) (playlist Playlist, err error) {
@@ -546,6 +554,16 @@ func (client *YaMusicClient) UnlikeTrack(trackId string) (err error) {
 	return
 }
 
+func (client *YaMusicClient) LikeAlbum(albumId uint64) (err error) {
+	_, _, err = postRequest[interface{}](client.token, fmt.Sprintf("/users/%d/likes/albums/add-multiple", client.userid), url.Values{"album-ids": {fmt.Sprint(albumId)}})
+	return
+}
+
+func (client *YaMusicClient) UnlikeAlbum(albumId uint64) (err error) {
+	_, _, err = postRequest[interface{}](client.token, fmt.Sprintf("/users/%d/likes/albums/remove", client.userid), url.Values{"album-ids": {fmt.Sprint(albumId)}})
+	return
+}
+
 func (client *YaMusicClient) TrackDownloadInfo(trackId string) (dowInfos []TrackDownloadInfo, err error) {
 	dowInfos, _, err = getRequest[[]TrackDownloadInfo](client.token, fmt.Sprintf("/tracks/%s/download-info", trackId), nil)
 	return
@@ -625,7 +643,10 @@ func (client *YaMusicClient) SearchSuggest(part string) (suggestions SearchSugge
 	return
 }
 
-func (client *YaMusicClient) TrackLyricsRequest(trackId string) (LRCLyrics []LyricPair, err error) {
+func (client *YaMusicClient) TrackLyricsRequest(trackId, format string) (LRCLyrics []LyricPair, err error) {
+	if format != "LRC" && format != "TEXT" {
+		format = "LRC"
+	}
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
 	// scary algorithm to sign the request (required for lyrics)
 	message := trackId + timestamp
@@ -633,7 +654,7 @@ func (client *YaMusicClient) TrackLyricsRequest(trackId string) (LRCLyrics []Lyr
 	h.Write([]byte(message))
 	hmacSign := h.Sum(nil)
 	sign := base64.StdEncoding.EncodeToString(hmacSign)
-	lyrics, _, err := getRequest[TrackLyrics](client.token, fmt.Sprintf("/tracks/%s/lyrics", trackId), url.Values{"sign": {sign}, "timeStamp": {timestamp}, "format": {"LRC"}})
+	lyrics, _, err := getRequest[TrackLyrics](client.token, fmt.Sprintf("/tracks/%s/lyrics", trackId), url.Values{"sign": {sign}, "timeStamp": {timestamp}, "format": {format}})
 	if err != nil {
 		return []LyricPair{}, err
 	}
@@ -652,6 +673,17 @@ func (client *YaMusicClient) TrackLyricsRequest(trackId string) (LRCLyrics []Lyr
 	data, err := io.ReadAll(LRCLyricsResponse.Body)
 	if err != nil {
 		return []LyricPair{}, err
+	}
+	if format == "TEXT" {
+		for _, line := range strings.Split(string(data), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				LRCLyrics = append(LRCLyrics, LyricPair{Timestamp: -1, Line: line})
+				if len(LRCLyrics) >= 200 {
+					break
+				}
+			}
+		}
+		return LRCLyrics, nil
 	}
 	LRCLyrics = parseLRCText(string(data))
 	return

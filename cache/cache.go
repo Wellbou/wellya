@@ -42,6 +42,14 @@ func safeName(trackId string) string {
 	return safe + ".mp3"
 }
 
+func Path(trackId string) string {
+	dir, err := getCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, safeName(trackId))
+}
+
 func Read(trackId string) (*os.File, int64, error) {
 	dir, err := getCacheDir()
 	if err != nil {

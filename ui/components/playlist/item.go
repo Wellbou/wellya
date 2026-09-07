@@ -21,6 +21,7 @@ type Item struct {
 
 	Albums        []api.Album
 	SelectedAlbum int
+	Browsed       bool
 }
 
 func (i *Item) FilterValue() string {

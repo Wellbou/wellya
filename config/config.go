@@ -1,9 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -113,10 +116,24 @@ func load() (Config, error) {
 		if _, ok := raw["cache-tracks"]; !ok {
 			newConfig.CacheTracks = defaultConfig.CacheTracks
 		}
+		if _, ok := raw["resume-on-start"]; !ok {
+			newConfig.ResumeOnStart = defaultConfig.ResumeOnStart
+		}
 	}
 
 	if newConfig.VolumeStep == 0 {
 		newConfig.VolumeStep = defaultConfig.VolumeStep
+	}
+
+	if rawControls, ok := raw["controls"].(map[string]any); ok && newConfig.Controls != nil {
+		if _, ok := rawControls["tracks-page-up"]; !ok {
+			if legacy, ok := rawControls["tracks-next-page"]; ok && legacy != nil {
+				newConfig.Controls.TracksPageUp = NewKey(anyToString(legacy))
+			}
+			if legacy, ok := rawControls["tracks-previous-page"]; ok && legacy != nil {
+				newConfig.Controls.TracksPageDown = NewKey(anyToString(legacy))
+			}
+		}
 	}
 
 	if newConfig.Search == nil {
@@ -156,6 +173,46 @@ func load() (Config, error) {
 	}
 
 	return newConfig, nil
+}
+
+func detectCollisions(c *Controls) []string {
+	seen := make(map[string]string)
+	var out []string
+	v := reflect.ValueOf(c).Elem()
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		k, ok := v.Field(i).Interface().(*Key)
+		if !ok || k == nil {
+			continue
+		}
+		action := t.Field(i).Tag.Get("yaml")
+		for _, key := range k.Keys() {
+			if prev, dup := seen[key]; dup && prev != action {
+				out = append(out, fmt.Sprintf("%q bound to both %s and %s", key, prev, action))
+			} else {
+				seen[key] = action
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func CollisionWarnings() string {
+	cols := detectCollisions(Current.Controls)
+	if len(cols) == 0 {
+		return ""
+	}
+	return "key collisions: " + strings.Join(cols, "; ")
+}
+
+func anyToString(v any) string {
+	switch s := v.(type) {
+	case string:
+		return s
+	default:
+		return ""
+	}
 }
 
 func fillDefault(target, values any) {

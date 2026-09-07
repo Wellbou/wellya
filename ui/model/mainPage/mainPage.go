@@ -30,7 +30,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-const AppVersion = "dev-help-modal"
+var AppVersion = "dev"
 
 type Model struct {
 	program       *tea.Program
@@ -67,32 +67,38 @@ type Model struct {
 	currentIsRadio       bool
 	playGeneration       atomic.Int64
 	pendingResumePos     int64
+	pendingCache         bool
 	searchGen            int
 	lastPlaylistIdx      int
 	lastRadioIdx         int
 	wasRadioTab          bool
+	navStack             []navPos
+	offline              bool
+	lastAddPlaylistKind  uint64
 	likedTracksMap       map[string]bool
+	likedAlbumsMap       map[uint64]bool
 	cachedTracksMap      map[string]bool
 	historyTracks        []api.Track
 	sortMode             int
 
 	toastMessage string
-	toastTimer   int
+	toastGen     int
 
 	lastSearchResult api.SearchResult
 	hasSearchResult  bool
 }
 
-type toastTickMsg struct{}
+type toastExpireMsg struct {
+	gen int
+}
 
 func (m *Model) ShowToast(msg string) tea.Cmd {
 	m.toastMessage = msg
-	m.toastTimer = 150
-	return toastTickCmd
-}
-
-func toastTickCmd() tea.Msg {
-	return toastTickMsg{}
+	m.toastGen++
+	gen := m.toastGen
+	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+		return toastExpireMsg{gen: gen}
+	})
 }
 
 func New(mediaHandler handler.MediaHandler) *Model {
@@ -103,6 +109,7 @@ func New(mediaHandler handler.MediaHandler) *Model {
 	m.clipboard = clipboard.New()
 	m.mediaHandler = mediaHandler
 	m.likedTracksMap = make(map[string]bool)
+	m.likedAlbumsMap = make(map[uint64]bool)
 	m.cachedTracksMap = make(map[string]bool)
 	m.historyTracks = make([]api.Track, 0, 100)
 	m.spinner = spinner.New(spinner.WithSpinner(spinner.Points))
@@ -165,6 +172,11 @@ func (m *Model) realTrackIndex(pl *playlist.Item) int {
 	return -1
 }
 
+type navPos struct {
+	isRadio bool
+	index   int
+}
+
 func firstActiveIndex(items []*playlist.Item) int {
 	for i := range items {
 		if items[i].Active {
@@ -192,6 +204,11 @@ func (m *Model) toggleRadioTab() {
 		m.lastRadioIdx = idx
 		m.radioPlaylists.Select(idx)
 		if len(items) > 0 {
+			sel := m.radioPlaylists.SelectedItem()
+			if sel.Kind == playlist.STATION && len(sel.Tracks) == 0 && m.client != nil {
+				m.loadStationTracks(sel)
+				m.radioPlaylists.SetItem(m.radioPlaylists.Index(), sel)
+			}
 			m.displayPlaylist(m.radioPlaylists.SelectedItem())
 		}
 	} else {
@@ -252,14 +269,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyInitialLoad(msg)
 		return m, nil
 
-	case toastTickMsg:
-		if m.toastTimer > 0 {
-			m.toastTimer--
-			if m.toastTimer == 0 {
-				m.toastMessage = ""
-			} else {
-				cmds = append(cmds, toastTickCmd)
-			}
+	case toastExpireMsg:
+		if msg.gen == m.toastGen {
+			m.toastMessage = ""
 		}
 
 	case trackReadyMsg:
@@ -279,6 +291,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.tracker.SetBitrate(msg.bitrate)
+		m.pendingCache = false
 		if !m.tracker.StartTrack(msg.track, msg.buffer, msg.lyrics) {
 			break
 		}
@@ -318,6 +331,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 
 	case likeDoneMsg:
 		cmd = m.applyLike(msg.trackId, msg.unlike, msg.track)
+		cmds = append(cmds, cmd)
+
+	case albumLikeDoneMsg:
+		cmd = m.applyAlbumLike(msg.albumId, msg.title, msg.unlike)
 		cmds = append(cmds, cmd)
 
 	case playlistRemovedMsg:
@@ -521,6 +538,12 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.isRenamePlaylistActive = true
 		case playlist.TOGGLE_VIEW:
 			m.isPlaylistHideOverride = !m.isPlaylistHideOverride
+		case playlist.SHARE:
+			sel := m.activePlaylists().SelectedItem()
+			if sel.Kind >= playlist.USER && m.client != nil {
+				m.clipboard.CopyText(api.SharePlaylistLink(m.client.UserID(), sel.Kind))
+				cmds = append(cmds, m.ShowToast("playlist link copied"))
+			}
 		}
 
 	// tracklist control update
@@ -551,7 +574,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		case tracklist.LIKE:
-			if !m.albumListActive() {
+			if m.albumListActive() {
+				cmd = m.likeSelectedAlbum()
+				cmds = append(cmds, cmd)
+			} else {
 				cmd = m.likeSelectedTrack()
 				cmds = append(cmds, cmd)
 			}
@@ -593,7 +619,18 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tracklist.BACK:
 			active := m.activePlaylists()
 			selectedPlaylist := active.SelectedItem()
-			if selectedPlaylist.Kind == playlist.ALBUMS && len(selectedPlaylist.Albums) > 0 && selectedPlaylist.SelectedAlbum >= 0 {
+			if selectedPlaylist.Browsed && len(m.navStack) > 0 {
+				prev := m.navStack[len(m.navStack)-1]
+				m.navStack = m.navStack[:len(m.navStack)-1]
+				if prev.isRadio != m.isRadioTab {
+					m.toggleRadioTab()
+					active = m.activePlaylists()
+				}
+				if prev.index >= 0 && prev.index < len(active.Items()) {
+					active.Select(prev.index)
+					m.displayPlaylist(active.SelectedItem())
+				}
+			} else if selectedPlaylist.Kind == playlist.ALBUMS && len(selectedPlaylist.Albums) > 0 && selectedPlaylist.SelectedAlbum >= 0 {
 				selectedPlaylist.SelectedAlbum = -1
 				m.displayPlaylist(selectedPlaylist)
 				cmd = active.SetItem(active.Index(), selectedPlaylist)
@@ -636,6 +673,15 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tracklist.STATS:
 			cmd = m.showStats()
 			cmds = append(cmds, cmd)
+		case tracklist.PLAY_NEXT:
+			if idx := m.realTrackIndex(m.activePlaylists().SelectedItem()); idx >= 0 {
+				track := m.activePlaylists().SelectedItem().Tracks[idx]
+				cmd = m.enqueueNextTrack(&track)
+				cmds = append(cmds, cmd)
+			}
+		case tracklist.QUICK_ADD:
+			cmd = m.quickAddSelectedTrack()
+			cmds = append(cmds, cmd)
 		}
 
 	// player control update
@@ -657,8 +703,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tracker.VOLUME:
 			m.mediaHandler.OnVolume()
 		case tracker.CACHE_TRACK:
-			cmd = m.cacheCurrentTrack()
-			cmds = append(cmds, cmd)
+			if buf := m.tracker.TrackBuffer(); buf != nil && buf.IsBuffered() {
+				cmd = m.cacheCurrentTrack()
+				cmds = append(cmds, cmd)
+			} else {
+				m.pendingCache = true
+				cmds = append(cmds, m.ShowToast("will cache when buffered"))
+			}
 		case tracker.CACHE_ALL_LIKED:
 			go m.cacheAllLikedTracks()
 		case tracker.DOWNLOAD_TRACK:
@@ -667,6 +718,12 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tracker.TOGGLE_MUTE:
 			m.tracker.ToggleMute()
 		case tracker.BUFFERING_COMPLETE:
+			if m.pendingCache {
+				m.pendingCache = false
+				cmd = m.cacheCurrentTrack()
+				cmds = append(cmds, cmd)
+				break
+			}
 			cacheMode := config.Current.CacheTracks
 			if cacheMode == config.CACHE_ALL || (cacheMode == config.CACHE_LIKED_ONLY && m.likedTracksMap[string(m.tracker.CurrentTrack().Id)]) {
 				cmd = m.cacheCurrentTrack()
@@ -820,8 +877,7 @@ func (m *Model) View() string {
 
 	if m.toastMessage != "" {
 		toast := style.ToastBoxStyle.Render(style.ToastTextStyle.Render(m.toastMessage))
-		toastOverlay := lipgloss.Place(m.width, 1, lipgloss.Center, lipgloss.Bottom, toast)
-		mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, toastOverlay)
+		mainView = toastOverlay(mainView, toast, m.width)
 	}
 
 	return mainView
@@ -1003,9 +1059,14 @@ func modalOverlay(base, box string, width int) string {
 		startCol = 0
 	}
 
+	paint := func(s string) string { return dim.Render(s) }
+	return strings.Join(overlayBox(plain, boxLines, totalW, boxW, startRow, startCol, paint), "\n")
+}
+
+func overlayBox(plain, boxLines []string, totalW, boxW, startRow, startCol int, paint func(string) string) []string {
 	out := make([]string, len(plain))
 	for i, p := range plain {
-		out[i] = dim.Render(p)
+		out[i] = paint(p)
 	}
 	for i, bl := range boxLines {
 		r := startRow + i
@@ -1020,9 +1081,49 @@ func modalOverlay(base, box string, width int) string {
 		if rw := totalW - startCol - boxW; rw > 0 {
 			right = strings.Repeat(" ", rw)
 		}
-		out[r] = dim.Render(left) + bl + right
+		out[r] = paint(left) + bl + right
 	}
-	return strings.Join(out, "\n")
+	return out
+}
+
+func toastOverlay(base, toast string, width int) string {
+	baseLines := strings.Split(base, "\n")
+	boxLines := strings.Split(toast, "\n")
+
+	totalW := width
+	if totalW <= 0 {
+		for _, l := range baseLines {
+			if w := lipgloss.Width(l); w > totalW {
+				totalW = w
+			}
+		}
+	}
+	plain := make([]string, len(baseLines))
+	for i, l := range baseLines {
+		p := l
+		if w := lipgloss.Width(p); w < totalW {
+			p += strings.Repeat(" ", totalW-w)
+		}
+		plain[i] = p
+	}
+
+	boxW := 0
+	for _, l := range boxLines {
+		if w := lipgloss.Width(l); w > boxW {
+			boxW = w
+		}
+	}
+	startRow := len(plain) - len(boxLines)
+	if startRow < 0 {
+		startRow = 0
+	}
+	startCol := (totalW - boxW) / 2
+	if startCol < 0 {
+		startCol = 0
+	}
+
+	plainFn := func(s string) string { return s }
+	return strings.Join(overlayBox(plain, boxLines, totalW, boxW, startRow, startCol, plainFn), "\n")
 }
 
 func (m *Model) showTrackInfo() {

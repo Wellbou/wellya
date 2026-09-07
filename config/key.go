@@ -41,6 +41,12 @@ func (k *Key) Contains(keyName string) bool {
 	return slices.Contains(k.keyNames, keyName)
 }
 
+func (k *Key) Keys() []string {
+	out := make([]string, len(k.keyNames))
+	copy(out, k.keyNames)
+	return out
+}
+
 func (k *Key) MarshalYAML() (interface{}, error) {
 	return strings.Join(k.keyNames, ","), nil
 }

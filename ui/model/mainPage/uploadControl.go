@@ -269,7 +269,7 @@ func buildLocalTrack(filePath string) (*api.Track, error) {
 
 	writeTrackID3Tag(cacheFile, track, nil, "")
 	_, _ = f.Seek(0, io.SeekStart)
-	_, err = io.Copy(cacheFile, f)
+	_, err = copyAudioWithoutID3(cacheFile, f)
 	if err != nil {
 		_ = cache.Remove(id)
 		return nil, err

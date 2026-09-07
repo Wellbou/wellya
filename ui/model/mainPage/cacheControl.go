@@ -179,7 +179,7 @@ func downloadAndCacheTrack(client *api.YaMusicClient, track *api.Track) error {
 		return err
 	}
 
-	bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
+	bestTrackInfo := selectBestDownloadInfo(trackInfos, config.QUALITY_BEST)
 
 	trackReader, _, err := client.DownloadTrack(bestTrackInfo)
 	if err != nil {
@@ -203,12 +203,39 @@ func downloadAndCacheTrack(client *api.YaMusicClient, track *api.Track) error {
 	return nil
 }
 
+func downloadCover(track *api.Track) ([]byte, string) {
+	coverPath := filepath.Join(os.TempDir(), config.DirName, "dlcover.tmp")
+	f, err := os.OpenFile(coverPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, ""
+	}
+	defer func() {
+		f.Close()
+		_ = os.Remove(coverPath)
+	}()
+	coverType, err := api.DownloadTrackCover(f, track, 1000)
+	if err != nil {
+		return nil, ""
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, ""
+	}
+	data, err := io.ReadAll(io.LimitReader(f, 4<<20))
+	if err != nil || len(data) == 0 {
+		return nil, ""
+	}
+	return data, coverType
+}
+
 func sanitizeFilename(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' || r == '-' || r == '_' || r == '.' {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' || r == '-' || r == '_' || r == '.' || r == '\'':
 			b.WriteRune(r)
-		} else if r != '/' && r != '\\' {
+		case r == '"' || r == '’' || r == '‘' || r == '“' || r == '”' || r == '«' || r == '»':
+			b.WriteRune('\'')
+		default:
 			b.WriteRune('_')
 		}
 	}
@@ -253,6 +280,14 @@ func (m *Model) downloadCurrentTrack() tea.Cmd {
 		m.tracker.ShowError("already downloaded")
 		return nil
 	}
+	if entries, err := os.ReadDir(downloadDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.EqualFold(e.Name(), filename) {
+				m.tracker.ShowError("already downloaded")
+				return nil
+			}
+		}
+	}
 	if m.client == nil {
 		m.tracker.ShowError("not logged in")
 		return nil
@@ -275,7 +310,7 @@ func (m *Model) downloadTrackFile(client *api.YaMusicClient, track *api.Track, f
 		return
 	}
 
-	bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
+	bestTrackInfo := selectBestDownloadInfo(trackInfos, config.QUALITY_BEST)
 
 	trackReader, _, err := client.DownloadTrack(bestTrackInfo)
 	if err != nil {
@@ -291,8 +326,9 @@ func (m *Model) downloadTrackFile(client *api.YaMusicClient, track *api.Track, f
 	}
 	defer file.Close()
 
-	writeTrackID3Tag(file, track, nil, "")
-	if _, err := io.Copy(file, trackReader); err != nil {
+	coverBytes, coverType := downloadCover(track)
+	writeTrackID3Tag(file, track, coverBytes, coverType)
+	if _, err := copyAudioWithoutID3(file, trackReader); err != nil {
 		_ = os.Remove(filePath)
 		fail("download: stream", fmt.Sprintf("failed to write track: %s", err))
 		return

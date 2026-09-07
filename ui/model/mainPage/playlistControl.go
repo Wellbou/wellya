@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/wellbou/wellya/api"
+	"github.com/wellbou/wellya/cache"
 	"github.com/wellbou/wellya/config"
 	"github.com/wellbou/wellya/log"
 	"github.com/wellbou/wellya/ui/components/input"
@@ -103,7 +104,7 @@ type playlistTrackAddedMsg struct {
 }
 
 func (m *Model) createPlaylistAndAdd(client *api.YaMusicClient, name string, track api.Track) {
-	pl, err := client.CreatePlaylist(name, true)
+	pl, err := client.CreatePlaylist(name, false)
 	if err != nil {
 		log.Print(log.LVL_ERROR, "failed to create playlist [%s]: %s", name, err)
 		m.Send(errorToastMsg{reason: "playlist create"})
@@ -150,7 +151,40 @@ func (m *Model) applyPlaylistCreated(item *playlist.Item, track api.Track) {
 	go m.addTrackToPlaylist(m.client, item.Kind, item.Revision, 0, track)
 }
 
+func (m *Model) quickAddSelectedTrack() tea.Cmd {
+	if m.client == nil {
+		m.tracker.ShowError("not logged in")
+		return nil
+	}
+	if m.lastAddPlaylistKind == 0 {
+		return m.ShowToast("no recent playlist — press a first")
+	}
+	pl := m.activePlaylists().SelectedItem()
+	idx := m.realTrackIndex(pl)
+	if idx < 0 || idx >= len(pl.Tracks) {
+		return nil
+	}
+	trackCopy := pl.Tracks[idx]
+	var target *playlist.Item
+	for _, it := range m.playlists.Items() {
+		if it.Kind == m.lastAddPlaylistKind {
+			target = it
+			break
+		}
+	}
+	if target == nil {
+		m.lastAddPlaylistKind = 0
+		return m.ShowToast("recent playlist is gone — press a first")
+	}
+	go m.addTrackToPlaylist(m.client, target.Kind, target.Revision, len(target.Tracks), trackCopy)
+	if next := m.tracklist.Index() + 1; next < len(m.tracklist.Items()) {
+		m.tracklist.Select(next)
+	}
+	return m.ShowToast("added to " + target.Name)
+}
+
 func (m *Model) applyPlaylistTrackAdded(kind uint64, rev int, track api.Track) {
+	m.lastAddPlaylistKind = kind
 	playlists := m.playlists.Items()
 	for i := range playlists {
 		if playlists[i].Kind != kind {
@@ -226,6 +260,13 @@ func (m *Model) confirmRemoveFromPlaylist(pl *playlist.Item, index int) tea.Cmd 
 		msg = "Remove cached track? (y/n)"
 	default:
 		msg = "Remove track from playlist? (y/n)"
+	}
+	if len(pl.Tracks) < 2 {
+		switch pl.Kind {
+		case playlist.NONE, playlist.MYWAVE, playlist.STATION, playlist.ALBUMS, playlist.HISTORY, playlist.LIKES, playlist.LOCAL:
+		default:
+			msg = "Last track! The whole playlist will be deleted. Continue? (y/n)"
+		}
 	}
 
 	m.confirmAction = func() tea.Msg {
@@ -420,7 +461,7 @@ func (m *Model) removeFromQueue() tea.Cmd {
 	}
 	m.refreshQueueView()
 
-	return tea.Batch(cmd, m.ShowToast("removed from queue"))
+	return tea.Batch(cmd, m.ShowToast("hidden locally until reload (not synced)"))
 }
 
 func (m *Model) shufflePlaylist(pl *playlist.Item) tea.Cmd {
@@ -784,9 +825,19 @@ func (m *Model) exportPlaylist() tea.Cmd {
 				artist = helpers.ArtistList(t.Artists)
 			}
 		}
-		durationSec := t.DurationMs / 1000
+		durationSec := int(t.DurationMs) / 1000
 		fmt.Fprintf(file, "#EXTINF:%d,%s - %s\n", durationSec, artist, t.Title)
-		link := api.ShareTrackLink(&t)
+		link := ""
+		if id := string(t.Id); m.cachedTracksMap[id] {
+			if p := cache.Path(id); p != "" {
+				if _, err := os.Stat(p); err == nil {
+					link = p
+				}
+			}
+		}
+		if link == "" {
+			link = api.ShareTrackLink(&t)
+		}
 		if link == "" {
 			link = string(t.Id)
 		}

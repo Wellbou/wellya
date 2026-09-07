@@ -13,6 +13,7 @@ type helpKeyMap struct {
 	Play               key.Binding
 	LikeUnlike         key.Binding
 	AddToPlaylist      key.Binding
+	QuickAdd           key.Binding
 	RemoveFromPlaylist key.Binding
 	Search             key.Binding
 	Share              key.Binding
@@ -45,11 +46,12 @@ func newHelpMap() *helpKeyMap {
 	return &helpKeyMap{
 		CursorUp:           key.NewBinding(controls.CursorUp.Binding(), controls.CursorUp.Help("up")),
 		CursorDown:         key.NewBinding(controls.CursorDown.Binding(), controls.CursorDown.Help("down")),
-		PageUp:             key.NewBinding(controls.TracksNextPage.Binding(), controls.TracksNextPage.Help("page up")),
-		PageDown:           key.NewBinding(controls.TracksPrevPage.Binding(), controls.TracksPrevPage.Help("page down")),
+		PageUp:             key.NewBinding(controls.TracksPageUp.Binding(), controls.TracksPageUp.Help("page up")),
+		PageDown:           key.NewBinding(controls.TracksPageDown.Binding(), controls.TracksPageDown.Help("page down")),
 		Play:               key.NewBinding(controls.Apply.Binding(), controls.Apply.Help("play")),
 		LikeUnlike:         key.NewBinding(controls.TracksLike.Binding(), controls.TracksLike.Help("like selected")),
 		AddToPlaylist:      key.NewBinding(controls.TracksAddToPlaylist.Binding(), controls.TracksAddToPlaylist.Help("add to")),
+		QuickAdd:           key.NewBinding(controls.TracksQuickAdd.Binding(), controls.TracksQuickAdd.Help("quick add")),
 		RemoveFromPlaylist: key.NewBinding(controls.TracksRemoveFromPlaylist.Binding(), controls.TracksRemoveFromPlaylist.Help("remove")),
 		Search:             key.NewBinding(controls.TracksSearch.Binding(), controls.TracksSearch.Help("search")),
 		Share:              key.NewBinding(controls.TracksShare.Binding(), controls.TracksShare.Help("share")),
@@ -67,7 +69,7 @@ func newHelpMap() *helpKeyMap {
 		Dislike:            key.NewBinding(controls.TracksDislike.Binding(), controls.TracksDislike.Help("dislike")),
 		Sort:               key.NewBinding(controls.TracksSort.Binding(), controls.TracksSort.Help("sort")),
 		Filter:             key.NewBinding(controls.TracksFilter.Binding(), controls.TracksFilter.Help("filter")),
-		RemoveFromQueue:    key.NewBinding(controls.TracksRemoveFromQueue.Binding(), controls.TracksRemoveFromQueue.Help("remove from queue")),
+		RemoveFromQueue:    key.NewBinding(controls.TracksRemoveFromQueue.Binding(), controls.TracksRemoveFromQueue.Help("hide (local)")),
 		Export:             key.NewBinding(controls.TracksExport.Binding(), controls.TracksExport.Help("export m3u")),
 		Upload:             key.NewBinding(controls.TracksUpload.Binding(), controls.TracksUpload.Help("upload mp3")),
 		Stats:              key.NewBinding(controls.TracksStats.Binding(), controls.TracksStats.Help("stats")),
@@ -84,7 +86,7 @@ func (k helpKeyMap) ShortHelp() []key.Binding {
 func (k helpKeyMap) FullHelp() [][]key.Binding {
 	bindings := [][]key.Binding{
 		{k.CursorUp, k.CursorDown, k.PageUp, k.PageDown},
-		{k.Play, k.LikeUnlike, k.AddToPlaylist, k.RemoveFromPlaylist},
+		{k.Play, k.LikeUnlike, k.AddToPlaylist, k.QuickAdd, k.RemoveFromPlaylist},
 		{k.Search, k.Share, k.MoveUp, k.MoveDown},
 		{k.JumpToPlaying, k.ShowQueue, k.ArtistBrowse, k.TrackInfo, k.GoToAlbum, k.Dislike, k.RemoveFromQueue, k.Export, k.Upload, k.Stats, k.Sort, k.Filter},
 	}

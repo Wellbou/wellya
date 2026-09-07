@@ -128,10 +128,11 @@ type Controls struct {
 	PlaylistsDown   *Key `yaml:"playlists-down"`
 	PlaylistsRename *Key `yaml:"playlists-rename"`
 	PlaylistsHide   *Key `yaml:"playlists-hide"`
+	PlaylistsShare  *Key `yaml:"playlists-share"`
 	PlaylistsRadio  *Key `yaml:"playlists-radio"`
 	// Track list control
-	TracksNextPage           *Key `yaml:"tracks-next-page"`
-	TracksPrevPage           *Key `yaml:"tracks-previous-page"`
+	TracksPageUp             *Key `yaml:"tracks-page-up"`
+	TracksPageDown           *Key `yaml:"tracks-page-down"`
 	TracksLike               *Key `yaml:"tracks-like"`
 	TracksAddToPlaylist      *Key `yaml:"tracks-add-to-playlist"`
 	TracksRemoveFromPlaylist *Key `yaml:"tracks-remove-from-playlist"`
@@ -154,6 +155,7 @@ type Controls struct {
 	TracksRemoveFromQueue    *Key `yaml:"tracks-remove-from-queue"`
 	TracksExport             *Key `yaml:"tracks-export"`
 	TracksUpload             *Key `yaml:"tracks-upload"`
+	TracksQuickAdd           *Key `yaml:"tracks-quick-add"`
 	TracksStats              *Key `yaml:"tracks-stats"`
 	TracksPlayNext           *Key `yaml:"tracks-play-next"`
 	// Player control
@@ -196,6 +198,7 @@ type Config struct {
 	CacheTracks    CacheType   `yaml:"cache-tracks"`
 	CacheDir       string      `yaml:"cache-dir"`
 	DownloadDir    string      `yaml:"download-dir"`
+	ResumeOnStart  bool        `yaml:"resume-on-start"`
 	Proxy          string      `yaml:"proxy"`
 	Search         *Search     `yaml:"search"`
 	Controls       *Controls   `yaml:"controls"`
@@ -212,6 +215,7 @@ var defaultConfig = Config{
 	CacheTracks:    CACHE_LIKED_ONLY,
 	CacheDir:       "",
 	DownloadDir:    "",
+	ResumeOnStart:  true,
 	SuppressErrors: false,
 	Search: &Search{
 		Artists:   true,
@@ -230,9 +234,10 @@ var defaultConfig = Config{
 		PlaylistsDown:            NewKey("ctrl+down"),
 		PlaylistsRename:          NewKey("ctrl+r"),
 		PlaylistsHide:            NewKey("ctrl+b"),
+		PlaylistsShare:           NewKey("Y"),
 		PlaylistsRadio:           NewKey("R"),
-		TracksNextPage:           NewKey("pgup"),
-		TracksPrevPage:           NewKey("pgdown"),
+		TracksPageUp:             NewKey("pgup"),
+		TracksPageDown:           NewKey("pgdown"),
 		TracksLike:               NewKey("l"),
 		TracksAddToPlaylist:      NewKey("a"),
 		TracksRemoveFromPlaylist: NewKey("ctrl+a"),
@@ -255,6 +260,7 @@ var defaultConfig = Config{
 		TracksRemoveFromQueue:    NewKey("X"),
 		TracksExport:             NewKey("E"),
 		TracksUpload:             NewKey("U"),
+		TracksQuickAdd:           NewKey("y"),
 		TracksStats:              NewKey("ctrl+g"),
 		TracksPlayNext:           NewKey("p"),
 		PlayerPause:              NewKey("space"),
@@ -264,7 +270,7 @@ var defaultConfig = Config{
 		PlayerRewindBackward:     NewKey("ctrl+left"),
 		PlayerLike:               NewKey("L"),
 		PlayerToggleLyrics:       NewKey("t"),
-		PlayerCache:              NewKey("S"),
+		PlayerCache:              NewKey("c"),
 		PlayerVolUp:              NewKey("+,="),
 		PlayerVolDown:            NewKey("-"),
 		PlayerHide:               NewKey("ctrl+p"),
