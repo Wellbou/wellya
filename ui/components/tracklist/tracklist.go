@@ -48,6 +48,7 @@ const (
 	STATS
 	PLAY_NEXT
 	QUICK_ADD
+	CACHE_MANAGER
 )
 
 type Model struct {
@@ -143,6 +144,10 @@ func (m *Model) View() string {
 
 func (m *Model) FilterValue() string {
 	return m.filterInput.Value()
+}
+
+func (m *Model) FilterFocused() bool {
+	return m.filterInput.Focused()
 }
 
 func (m *Model) SetFilterValue(v string) {
@@ -299,6 +304,8 @@ func (m *Model) Update(message tea.Msg) (*Model, tea.Cmd) {
 			cmds = append(cmds, model.Cmd(QUICK_ADD))
 		case controls.TracksPlayNext.Contains(keypress):
 			cmds = append(cmds, model.Cmd(PLAY_NEXT))
+		case controls.TracksCacheManager.Contains(keypress):
+			cmds = append(cmds, model.Cmd(CACHE_MANAGER))
 		}
 	}
 

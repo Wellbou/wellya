@@ -105,6 +105,7 @@ type Colors struct {
 }
 
 type Style struct {
+	Theme                   string  `yaml:"theme"`
 	VolumeIndicatorWidth    int     `yaml:"volume-indicator-width"`
 	VolumeIndicatorAutohide int     `yaml:"volume-indicator-autohide-at"`
 	SidePanelWidth          int     `yaml:"side-panel-width"`
@@ -155,7 +156,9 @@ type Controls struct {
 	TracksRemoveFromQueue    *Key `yaml:"tracks-remove-from-queue"`
 	TracksExport             *Key `yaml:"tracks-export"`
 	TracksUpload             *Key `yaml:"tracks-upload"`
+	TracksCacheManager       *Key `yaml:"tracks-cache-manager"`
 	TracksQuickAdd           *Key `yaml:"tracks-quick-add"`
+	TracksNowPlaying         *Key `yaml:"tracks-now-playing"`
 	TracksStats              *Key `yaml:"tracks-stats"`
 	TracksPlayNext           *Key `yaml:"tracks-play-next"`
 	// Player control
@@ -260,7 +263,9 @@ var defaultConfig = Config{
 		TracksRemoveFromQueue:    NewKey("X"),
 		TracksExport:             NewKey("E"),
 		TracksUpload:             NewKey("U"),
+		TracksCacheManager:       NewKey("B"),
 		TracksQuickAdd:           NewKey("y"),
+		TracksNowPlaying:         NewKey("f"),
 		TracksStats:              NewKey("ctrl+g"),
 		TracksPlayNext:           NewKey("p"),
 		PlayerPause:              NewKey("space"),

@@ -462,6 +462,10 @@ func (m *Model) SetBitrate(bitrate int) {
 	m.currentBitrate = bitrate
 }
 
+func (m *Model) Bitrate() int {
+	return m.currentBitrate
+}
+
 func (m *Model) Volume() float64 {
 	return m.volume
 }

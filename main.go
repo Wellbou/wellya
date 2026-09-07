@@ -14,6 +14,10 @@ import (
 )
 
 func main() {
+	if handleCliCommand() {
+		return
+	}
+
 	log.Start()
 	defer log.Stop()
 

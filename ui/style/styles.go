@@ -86,7 +86,34 @@ var (
 	TrackListActiveStyle lipgloss.Style
 )
 
+var themes = map[string]*config.Colors{
+	"purple": {
+		Accent: "#AB47BC", Error: "#E91E63", Border: "#6A1B9A",
+		Background: "#2C1A4A", PlaylistSelection: "#4A148C",
+		ActiveText: "#EDE7F6", NormalText: "#D1C4E9", InactiveText: "#7E57C2",
+		TrackTitleText: "#E1BEE7", TrackVersionText: "#B39DDB", TrackArtistText: "#CE93D8",
+		LyricsPrevious: "#4A148C", LyricsCurrent: "#E040FB", LyricsNext: "#7B1FA2",
+	},
+	"amber": {
+		Accent: "#FC0", Error: "#F33", Border: "#444",
+		Background: "#6b6b6b", PlaylistSelection: "#4a3c00",
+		ActiveText: "#EEE", NormalText: "#CCC", InactiveText: "#888",
+		TrackTitleText: "#dcdcdc", TrackVersionText: "#999", TrackArtistText: "#bbb",
+		LyricsPrevious: "#444", LyricsCurrent: "#EEE", LyricsNext: "#777",
+	},
+	"mono": {
+		Accent: "#FFF", Error: "#FFF", Border: "#666",
+		Background: "#000", PlaylistSelection: "#333",
+		ActiveText: "#FFF", NormalText: "#CCC", InactiveText: "#777",
+		TrackTitleText: "#DDD", TrackVersionText: "#999", TrackArtistText: "#BBB",
+		LyricsPrevious: "#444", LyricsCurrent: "#FFF", LyricsNext: "#777",
+	},
+}
+
 func Apply(style *config.Style) {
+	if preset, ok := themes[style.Theme]; ok {
+		style.Colors = preset
+	}
 	VolumeIndicatorWidth = style.VolumeIndicatorWidth
 	VolumeIndicatorAutohide = style.VolumeIndicatorAutohide
 	SidePanelWidth = style.SidePanelWidth

@@ -14,6 +14,8 @@ type helpKeyMap struct {
 	LikeUnlike         key.Binding
 	AddToPlaylist      key.Binding
 	QuickAdd           key.Binding
+	CacheManager       key.Binding
+	NowPlaying         key.Binding
 	RemoveFromPlaylist key.Binding
 	Search             key.Binding
 	Share              key.Binding
@@ -52,6 +54,8 @@ func newHelpMap() *helpKeyMap {
 		LikeUnlike:         key.NewBinding(controls.TracksLike.Binding(), controls.TracksLike.Help("like selected")),
 		AddToPlaylist:      key.NewBinding(controls.TracksAddToPlaylist.Binding(), controls.TracksAddToPlaylist.Help("add to")),
 		QuickAdd:           key.NewBinding(controls.TracksQuickAdd.Binding(), controls.TracksQuickAdd.Help("quick add")),
+		CacheManager:       key.NewBinding(controls.TracksCacheManager.Binding(), controls.TracksCacheManager.Help("cache manager")),
+		NowPlaying:         key.NewBinding(controls.TracksNowPlaying.Binding(), controls.TracksNowPlaying.Help("now playing")),
 		RemoveFromPlaylist: key.NewBinding(controls.TracksRemoveFromPlaylist.Binding(), controls.TracksRemoveFromPlaylist.Help("remove")),
 		Search:             key.NewBinding(controls.TracksSearch.Binding(), controls.TracksSearch.Help("search")),
 		Share:              key.NewBinding(controls.TracksShare.Binding(), controls.TracksShare.Help("share")),
@@ -88,7 +92,7 @@ func (k helpKeyMap) FullHelp() [][]key.Binding {
 		{k.CursorUp, k.CursorDown, k.PageUp, k.PageDown},
 		{k.Play, k.LikeUnlike, k.AddToPlaylist, k.QuickAdd, k.RemoveFromPlaylist},
 		{k.Search, k.Share, k.MoveUp, k.MoveDown},
-		{k.JumpToPlaying, k.ShowQueue, k.ArtistBrowse, k.TrackInfo, k.GoToAlbum, k.Dislike, k.RemoveFromQueue, k.Export, k.Upload, k.Stats, k.Sort, k.Filter},
+		{k.JumpToPlaying, k.ShowQueue, k.ArtistBrowse, k.TrackInfo, k.GoToAlbum, k.Dislike, k.RemoveFromQueue, k.Export, k.Upload, k.CacheManager, k.Stats, k.Sort, k.Filter},
 	}
 
 	if k.Shufflable {

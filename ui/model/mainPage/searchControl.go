@@ -27,10 +27,10 @@ type searchSuggestMsg struct {
 }
 
 type searchTabResultsMsg struct {
-	gen    int
-	req    string
-	tracks []api.Track
-	err    error
+	gen int
+	req string
+	res api.SearchResult
+	err error
 }
 
 func (m *Model) searchControl(msg search.Control) tea.Cmd {

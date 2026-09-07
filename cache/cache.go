@@ -83,6 +83,52 @@ func Write(trackId string) (*os.File, error) {
 	return file, nil
 }
 
+type CachedFile struct {
+	Name string
+	Size int64
+}
+
+func Files() ([]CachedFile, error) {
+	dir, err := getCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []CachedFile
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".mp3" {
+			continue
+		}
+		var size int64
+		if info, err := e.Info(); err == nil {
+			size = info.Size()
+		}
+		out = append(out, CachedFile{Name: e.Name(), Size: size})
+	}
+	return out, nil
+}
+
+func Clear() error {
+	dir, err := getCacheDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".mp3" {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
+	}
+	return nil
+}
+
 func Remove(trackId string) error {
 	dir, err := getCacheDir()
 	if err != nil {

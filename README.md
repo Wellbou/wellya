@@ -21,19 +21,24 @@ A valid Yandex Music account and an access token. The easiest way to get a token
 ### Features
 
 - Player: play/pause, next/previous track, progress bar, rewind, volume, mute (`m`)
+- Now playing fullscreen screen (`f`): progress, bitrate, queue, status
 - Repeat modes (`r`): off / all / one. Sleep timer (`n`): 15 to 120 minutes
-- Like/unlike (`l` / `L`), dislike (`d` / `D`), share link copy (`ctrl+s`)
-- Synced lyrics (`t`), audio quality switch (`q`): best / high / medium / low with bitrate display
-- Track caching (`S`), cache all liked tracks (`C`), download to file (`ctrl+w`)
+- Like/unlike tracks (`l` / `L`) and albums (`l` on album list), dislike (`d` / `D`)
+- Track (`ctrl+s`) and playlist (`Y`) share link copy
+- Synced + plain lyrics (`t`), audio quality switch (`q`): best / high / medium / low with bitrate display
+- Track caching (`c`), cache manager (`B`), cache all liked tracks (`C`), download to file (`ctrl+w`)
+- Downloads save in best quality with cover and full ID3 tags
 - Tabs: Playlists, Radio (`R`), Search (`S`)
 - My Wave stays in the main list; all other stations live on the Radio tab
-- Listening history (last 100 tracks), play queue view (`tab`), jump to playing (`N`)
+- Listening history (last 100 tracks, persists between runs), play queue view (`tab`), jump to playing (`N`)
 - Artist browse from track (`i`), go to album (`A`), track info (`I`)
-- Remove from queue without unliking (`X`), move tracks (`ctrl+u` / `ctrl+d`)
-- Sort (`s`): title / artist / duration. Inline playlist filter (`/` or just type, `esc` clears)
-- Global search tab: `enter` plays now, `p` enqueues as next
-- Playlist export to M3U (`E`), local file import (`U`): MP3/M3U files or folders
-- Stats toast (`ctrl+g`), toast notifications, delete confirmations (`y`/`n`)
+- Add to playlist (`a`), quick-add to last playlist (`y`), remove from queue without unliking (`X`), move tracks (`ctrl+u` / `ctrl+d`)
+- Sort (`s`): title / artist / duration. Inline playlist filter (`/`, `esc` clears)
+- Global search tab (tracks/artists/albums, `tab` cycles filter): `enter` plays or opens, `p` enqueues as next
+- Playlist export to M3U (`E`, local paths for cached tracks), local file import (`U`): MP3/M3U files or folders
+- Session restore: queue, track and position survive restarts (`resume-on-start`)
+- Color themes (`purple`/`amber`/`mono`), stats toast (`ctrl+g`), delete confirmations (`y`/`n`)
+- CLI control of a running instance for scripts/bars: `wellya --toggle/--next/--prev/--play/--pause/--stop`
 - Full hotkey reference modal (`F1`), every key rebindable in config
 - Resilient API parsing: numeric and id fields tolerate Yandex returning numbers as strings and back (FlexString/FlexInt/FlexUint64)
 
@@ -96,6 +101,8 @@ controls:
     tracks-like: l
     tracks-add-to-playlist: a
     tracks-quick-add: y
+    tracks-now-playing: f
+    tracks-cache-manager: B
     tracks-remove-from-playlist: ctrl+a
     tracks-remove-from-queue: X
     tracks-export: E
@@ -141,6 +148,15 @@ controls:
 Multiple keys per action are allowed, separated by commas.
 
 Cached tracks go to the system cache directory (`~/.cache/wellya` on Linux) unless `cache-dir` is set. Increase `buffer-size-ms` if playback stutters.
+
+### Themes
+
+```yaml
+style:
+    theme: purple # purple/amber/mono; replaces the whole palette
+```
+
+Omit `theme` (or set `custom`) to use your own `colors:` block instead.
 
 ### Local files
 

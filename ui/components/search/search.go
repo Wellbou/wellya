@@ -188,11 +188,52 @@ func (m *Model) SetResults(trackResults []api.Track) {
 		t := trackResults[i]
 		items = append(items, Item{
 			Label: labelForTrack(&t),
+			Kind:  "track",
 			Track: &t,
 		})
 	}
 	m.list.SetItems(items)
 	m.list.Select(0)
+}
+
+func (m *Model) SetMixedResults(tracks []api.Track, artists []api.Artist, albums []api.Album, best string) {
+	items := make([]list.Item, 0, len(tracks)+len(artists)+len(albums)+1)
+	if best != "" {
+		items = append(items, Item{Label: "★ " + best, Kind: "best"})
+	}
+	for i := range tracks {
+		t := tracks[i]
+		items = append(items, Item{
+			Label: labelForTrack(&t),
+			Kind:  "track",
+			Track: &t,
+		})
+	}
+	for i := range artists {
+		a := artists[i]
+		items = append(items, Item{
+			Label:  "[artist] " + a.Name,
+			Kind:   "artist",
+			Artist: &a,
+		})
+	}
+	for i := range albums {
+		a := albums[i]
+		items = append(items, Item{
+			Label: "[album] " + a.Title,
+			Kind:  "album",
+			Album: &a,
+		})
+	}
+	m.list.SetItems(items)
+	m.list.Select(0)
+}
+
+func (m *Model) SelectedResult() Item {
+	if it, ok := m.list.SelectedItem().(Item); ok {
+		return it
+	}
+	return Item{}
 }
 
 func (m *Model) captureSelected(playNext bool) {

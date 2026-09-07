@@ -14,9 +14,10 @@ type sessionState struct {
 	PlaylistKind uint64   `json:"playlist_kind"`
 	IsRadio      bool     `json:"is_radio"`
 	PlaylistName string   `json:"playlist_name"`
-	TrackIDs     []string `json:"track_ids"`
-	Current      int      `json:"current"`
-	PositionMs   int64    `json:"position_ms"`
+	TrackIDs     []string    `json:"track_ids"`
+	Current      int         `json:"current"`
+	PositionMs   int64       `json:"position_ms"`
+	History      []api.Track `json:"history,omitempty"`
 }
 
 func sessionPath() string {
@@ -24,36 +25,34 @@ func sessionPath() string {
 }
 
 func (m *Model) saveSession() {
+	state := sessionState{History: m.historyTracks}
+
 	cur := m.tracker.CurrentTrack()
-	if cur == nil || cur.Id == "" {
+	if cur != nil && cur.Id != "" {
+		if pl := m.currentPlaylist(); pl != nil && len(pl.Tracks) > 0 && !pl.Rotor {
+			ids := make([]string, 0, len(pl.Tracks))
+			for i := range pl.Tracks {
+				ids = append(ids, string(pl.Tracks[i].Id))
+			}
+			curIdx := pl.CurrentTrack
+			if curIdx < 0 || curIdx >= len(pl.Tracks) {
+				curIdx = 0
+			}
+			state.PlaylistKind = pl.Kind
+			state.IsRadio = m.currentIsRadio
+			state.PlaylistName = pl.Name
+			state.TrackIDs = ids
+			state.Current = curIdx
+			state.PositionMs = m.tracker.Position().Milliseconds()
+		}
+	}
+
+	if len(state.TrackIDs) == 0 && len(state.History) == 0 {
 		_ = os.Remove(sessionPath())
 		return
 	}
-	pl := m.currentPlaylist()
-	if pl == nil || len(pl.Tracks) == 0 || pl.Rotor {
-		if pl != nil && pl.Rotor {
-			_ = os.Remove(sessionPath())
-		}
-		return
-	}
 
-	ids := make([]string, 0, len(pl.Tracks))
-	for i := range pl.Tracks {
-		ids = append(ids, string(pl.Tracks[i].Id))
-	}
-	curIdx := pl.CurrentTrack
-	if curIdx < 0 || curIdx >= len(pl.Tracks) {
-		curIdx = 0
-	}
-
-	data, err := json.Marshal(sessionState{
-		PlaylistKind: pl.Kind,
-		IsRadio:      m.currentIsRadio,
-		PlaylistName: pl.Name,
-		TrackIDs:     ids,
-		Current:      curIdx,
-		PositionMs:   m.tracker.Position().Milliseconds(),
-	})
+	data, err := json.Marshal(state)
 	if err != nil {
 		return
 	}
@@ -70,6 +69,12 @@ func (m *Model) restoreSession() {
 	var s sessionState
 	if err := json.Unmarshal(data, &s); err != nil {
 		return
+	}
+	if len(s.History) > 0 {
+		m.historyTracks = append([]api.Track(nil), s.History...)
+		if len(m.historyTracks) > 100 {
+			m.historyTracks = m.historyTracks[:100]
+		}
 	}
 	if len(s.TrackIDs) == 0 {
 		return

@@ -59,6 +59,7 @@ type Model struct {
 	isPlaylistHideOverride bool
 	isConfirmActive        bool
 	isTrackInfoActive      bool
+	isCacheManagerActive   bool
 	showQueue              bool
 	confirmAction          tea.Cmd
 	confirmMessage         string
@@ -69,12 +70,14 @@ type Model struct {
 	pendingResumePos     int64
 	pendingCache         bool
 	searchGen            int
+	tabLastResult        api.SearchResult
 	lastPlaylistIdx      int
 	lastRadioIdx         int
 	wasRadioTab          bool
 	navStack             []navPos
 	offline              bool
 	lastAddPlaylistKind  uint64
+	showNowPlaying       bool
 	likedTracksMap       map[string]bool
 	likedAlbumsMap       map[uint64]bool
 	cachedTracksMap      map[string]bool
@@ -394,7 +397,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.tracker.ShowError("search")
 			break
 		}
-		m.searchDialog.SetResults(msg.tracks)
+		m.tabLastResult = msg.res
+		m.renderTabResults()
 
 	case tea.QuitMsg:
 		m.saveSession()
@@ -434,6 +438,32 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.isCacheManagerActive {
+			switch keypress {
+			case "esc":
+				m.isCacheManagerActive = false
+				return m, nil
+			case "d", "D":
+				m.isCacheManagerActive = false
+				m.confirmAction = func() tea.Msg {
+					return m.clearCache()()
+				}
+				m.confirmMessage = "Delete ALL cached tracks? (y/n)"
+				m.isConfirmActive = true
+				return m, nil
+			}
+			return m, nil
+		}
+
+		if m.showNowPlaying {
+			switch keypress {
+			case "esc", "enter":
+				m.showNowPlaying = false
+				return m, nil
+			}
+			return m, nil
+		}
+
 		switch {
 		case controls.Quit.Contains(keypress):
 			m.saveSession()
@@ -455,6 +485,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.toggleRadioTab()
 		case controls.TracksSearchTab.Contains(keypress):
 			m.toggleSearchTab()
+		case controls.TracksNowPlaying.Contains(keypress):
+			if !m.tracklist.FilterFocused() && !m.isSearchTab && !m.isSearchActive && !m.isAddPlaylistActive && !m.isRenamePlaylistActive && !m.isUploadActive && !m.isConfirmActive && !m.isTrackInfoActive && !m.helpDialog.Visible() {
+				m.showNowPlaying = !m.showNowPlaying
+			}
 		case controls.KeysHelp.Contains(keypress):
 			m.helpDialog.Show()
 		case controls.Reload.Contains(keypress):
@@ -681,6 +715,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tracklist.STATS:
 			cmd = m.showStats()
 			cmds = append(cmds, cmd)
+		case tracklist.CACHE_MANAGER:
+			m.isCacheManagerActive = true
 		case tracklist.PLAY_NEXT:
 			if idx := m.realTrackIndex(m.activePlaylists().SelectedItem()); idx >= 0 {
 				track := m.activePlaylists().SelectedItem().Tracks[idx]
@@ -869,6 +905,14 @@ func (m *Model) View() string {
 	}
 
 	mainView := lipgloss.JoinHorizontal(lipgloss.Bottom, playlistWithTabs, midPanel)
+
+	if m.showNowPlaying {
+		return modalOverlay(mainView, m.nowPlayingView(), m.width)
+	}
+
+	if m.isCacheManagerActive {
+		return modalOverlay(mainView, m.cacheManagerView(), m.width)
+	}
 
 	versionLabel := style.TrackVersionStyle.Render(" " + AppVersion + " ")
 	mainView = lipgloss.JoinVertical(lipgloss.Left, mainView, versionLabel)
@@ -1142,17 +1186,67 @@ func (m *Model) showTrackInfo() {
 	}
 }
 
+func (m *Model) renderTabResults() {
+	res := m.tabLastResult
+	best := ""
+	if res.Best.Result.Title != "" {
+		t := res.Best.Result
+		best = t.Title
+		if len(t.Artists) > 0 {
+			best += " — " + t.Artists[0].Name
+		}
+	}
+	var tracks []api.Track
+	var artists []api.Artist
+	var albums []api.Album
+	switch m.searchDialog.Filter() {
+	case 1:
+		tracks = res.Tracks.Results
+	case 2:
+		albums = res.Albums.Results
+	case 3:
+		artists = res.Artists.Results
+	default:
+		tracks = res.Tracks.Results
+		artists = res.Artists.Results
+		albums = res.Albums.Results
+	}
+	m.searchDialog.SetMixedResults(tracks, artists, albums, best)
+}
+
 func (m *Model) searchTabControl(msg search.Control) tea.Cmd {
 	var cmd tea.Cmd
 	switch msg {
 	case search.SELECT:
-		if t := m.searchDialog.SelectedTrack(); t != nil {
-			cmd = m.playNowTrack(t)
+		sel := m.searchDialog.SelectedResult()
+		switch sel.Kind {
+		case "track":
+			if sel.Track != nil {
+				cmd = m.playNowTrack(sel.Track)
+			}
+		case "artist":
+			if sel.Artist != nil && m.client != nil {
+				go m.fetchArtistTracks(m.client, *sel.Artist)
+			}
+		case "album":
+			if sel.Album != nil && m.client != nil {
+				go m.fetchAlbumTracks(m.client, uint64(sel.Album.Id))
+			}
+		default:
+			if t := m.searchDialog.SelectedTrack(); t != nil {
+				cmd = m.playNowTrack(t)
+			}
 		}
 	case search.PLAY_NEXT:
-		if t := m.searchDialog.SelectedTrack(); t != nil {
+		sel := m.searchDialog.SelectedResult()
+		if sel.Kind == "track" && sel.Track != nil {
+			cmd = m.enqueueNextTrack(sel.Track)
+		} else if t := m.searchDialog.SelectedTrack(); t != nil {
 			cmd = m.enqueueNextTrack(t)
 		}
+	case search.TOGGLE_FILTER:
+		m.searchDialog.SetFilter((m.searchDialog.Filter() + 1) % 4)
+		m.renderTabResults()
 	case search.CANCEL:
 		m.isSearchTab = false
 		m.searchDialog.Reset()
@@ -1174,7 +1268,7 @@ func (m *Model) searchTabControl(msg search.Control) tea.Cmd {
 				m.Send(searchTabResultsMsg{gen: gen, req: req, err: err})
 				return
 			}
-			m.Send(searchTabResultsMsg{gen: gen, req: req, tracks: res.Tracks.Results})
+			m.Send(searchTabResultsMsg{gen: gen, req: req, res: res})
 		}()
 	}
 	return cmd

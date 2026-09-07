@@ -139,6 +139,7 @@ func (m *Model) Lines() []string {
 			{keyName(c.PlaylistsUp, "ctrl+↑"), "Move up in sidebar"},
 			{keyName(c.PlaylistsDown, "ctrl+↓"), "Move down in sidebar"},
 			{keyName(c.PlaylistsRename, "ctrl+r"), "Rename selected playlist"},
+			{keyName(c.PlaylistsShare, "Y"), "Copy playlist link"},
 		}},
 		{"Player", []entry{
 			{keyName(c.PlayerPause, "space"), "Play / pause"},
@@ -178,7 +179,10 @@ func (m *Model) Lines() []string {
 			{keyName(c.TracksFilter, "/"), "Focus local filter (esc clears)"},
 			{keyName(c.TracksExport, "E"), "Export playlist to M3U"},
 			{keyName(c.TracksUpload, "U"), "Import local MP3/M3U/folder"},
+			{keyName(c.TracksCacheManager, "B"), "Cache manager"},
 			{keyName(c.TracksStats, "ctrl+g"), "Stats toast"},
+			{keyName(c.TracksQuickAdd, "y"), "Quick add to last playlist"},
+			{keyName(c.TracksNowPlaying, "f"), "Now playing screen"},
 			{keyName(c.TracksJumpToPlaying, "N"), "Jump to currently playing"},
 			{keyName(c.TracksShowQueue, "tab"), "Show up next"},
 			{keyName(c.TracksArtistBrowse, "i"), "Browse track artist"},
@@ -189,10 +193,11 @@ func (m *Model) Lines() []string {
 			{keyName(c.TracksBack, "backspace"), "Back / out of album"},
 		}},
 		{"Search tab", []entry{
-			{keyName(c.Apply, "enter"), "Play selected track now"},
+			{keyName(c.Apply, "enter"), "Play track / open artist / open album"},
 			{keyName(c.TracksPlayNext, "p"), "Enqueue selected as next"},
 			{keyName(c.CursorUp, "↑"), "Up in results"},
 			{keyName(c.CursorDown, "↓"), "Down in results"},
+			{"tab", "Cycle filter: all / tracks / albums / artists"},
 			{keyName(c.Cancel, "esc"), "Exit search tab"},
 		}},
 	}
