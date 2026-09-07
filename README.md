@@ -165,7 +165,7 @@ go build -ldflags="-linkmode=external" -o wellya .
 ---
 
 <p align="center">
-  <img src=".assets/OriginOfSymmetry.png" width="600" alt="Muse — Origin of Symmetry, the author's favourite album">
+  <img src=".assets/OriginOfSymmetry.png" width="600" alt="Muse - Origin of Symmetry, very cool album">
   <br>
-  <em>Tested on the author's favourite album — Muse, Origin of Symmetry (2001).</em>
+  <em>Thanks! I am happy when I know someone is reading this. Muse, Origin of Symmetry (2001).</em>
 </p>

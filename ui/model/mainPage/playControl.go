@@ -11,6 +11,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/bogem/id3v2/v2"
 	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/cache"
@@ -112,10 +113,10 @@ func (m *Model) loadStationTracks(pl *playlist.Item) {
 	}
 }
 
-func (m *Model) prevTrack() {
+func (m *Model) prevTrack() tea.Cmd {
 	currentPlaylist := m.currentPlaylist()
 	if currentPlaylist == nil {
-		return
+		return nil
 	}
 
 	if currentPlaylist.Rotor && m.tracker.IsPlaying() {
@@ -124,7 +125,7 @@ func (m *Model) prevTrack() {
 
 	if len(currentPlaylist.Tracks) == 0 || currentPlaylist.CurrentTrack <= 0 {
 		m.Send(tracker.STOP)
-		return
+		return nil
 	}
 
 	selectedPlaylist := m.activePlaylists().SelectedItem()
@@ -133,15 +134,20 @@ func (m *Model) prevTrack() {
 	m.indicateCurrentTrackPlaying(false)
 
 	currentPlaylist.CurrentTrack--
+	skipped := 0
 	for currentPlaylist.CurrentTrack > 0 && !currentPlaylist.Tracks[currentPlaylist.CurrentTrack].Available {
 		currentPlaylist.CurrentTrack--
+		skipped++
+	}
+	if skipped > 0 {
+		defer func() { m.Send(regionSkipMsg{count: skipped}) }()
 	}
 
 	m.currentPlaylists().SetItem(m.currentPlaylistIndex, currentPlaylist)
 	track := &currentPlaylist.Tracks[currentPlaylist.CurrentTrack]
 	if !track.Available {
 		m.Send(tracker.STOP)
-		return
+		return nil
 	}
 
 	m.playTrack(track)
@@ -150,12 +156,13 @@ func (m *Model) prevTrack() {
 		currentPlaylist.SelectedTrack = currentPlaylist.CurrentTrack
 		m.currentPlaylists().SetItem(m.currentPlaylistIndex, currentPlaylist)
 	}
+	return nil
 }
 
-func (m *Model) nextTrack() {
+func (m *Model) nextTrack() tea.Cmd {
 	currentPlaylist := m.currentPlaylist()
 	if currentPlaylist == nil {
-		return
+		return nil
 	}
 
 	if currentPlaylist.Rotor && m.tracker.IsPlaying() {
@@ -164,7 +171,7 @@ func (m *Model) nextTrack() {
 
 	if len(currentPlaylist.Tracks) == 0 {
 		m.Send(tracker.STOP)
-		return
+		return nil
 	}
 
 	m.indicateCurrentTrackPlaying(false)
@@ -188,22 +195,27 @@ func (m *Model) nextTrack() {
 		default: // no repeat
 			m.Send(tracker.STOP)
 		}
-		return
+		return nil
 	}
 
 	selectedPlaylist := m.activePlaylists().SelectedItem()
 	shouldFollow := currentPlaylist.IsSame(selectedPlaylist) && m.tracklist.Index() == currentPlaylist.CurrentTrack
 
 	currentPlaylist.CurrentTrack++
+	skipped := 0
 	for currentPlaylist.CurrentTrack < len(currentPlaylist.Tracks)-1 && !currentPlaylist.Tracks[currentPlaylist.CurrentTrack].Available {
 		currentPlaylist.CurrentTrack++
+		skipped++
+	}
+	if skipped > 0 {
+		defer func() { m.Send(regionSkipMsg{count: skipped}) }()
 	}
 
 	m.currentPlaylists().SetItem(m.currentPlaylistIndex, currentPlaylist)
 	track := &currentPlaylist.Tracks[currentPlaylist.CurrentTrack]
 	if !track.Available {
 		m.Send(tracker.STOP)
-		return
+		return nil
 	}
 
 	if currentPlaylist.CurrentTrack == len(currentPlaylist.Tracks)-1 {
@@ -216,6 +228,7 @@ func (m *Model) nextTrack() {
 		currentPlaylist.SelectedTrack = currentPlaylist.CurrentTrack
 		m.currentPlaylists().SetItem(m.currentPlaylistIndex, currentPlaylist)
 	}
+	return nil
 }
 
 type trackReadyMsg struct {

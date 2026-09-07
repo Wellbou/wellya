@@ -547,6 +547,14 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	// tracklist control update
+	case regionSkipMsg:
+		if msg.count == 1 {
+			cmds = append(cmds, m.ShowToast("1 track unavailable in your region — skipped"))
+		} else {
+			cmds = append(cmds, m.ShowToast(fmt.Sprintf("%d tracks unavailable in your region — skipped", msg.count)))
+		}
+
+	// tracklist control update
 	case tracklist.Control:
 		switch msg {
 		case tracklist.QUIT:
@@ -688,9 +696,11 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tracker.Control:
 		switch msg {
 		case tracker.NEXT:
-			m.nextTrack()
+			cmd = m.nextTrack()
+			cmds = append(cmds, cmd)
 		case tracker.PREV:
-			m.prevTrack()
+			cmd = m.prevTrack()
+			cmds = append(cmds, cmd)
 		case tracker.LIKE:
 			cmd = m.likePlayingTrack()
 			cmds = append(cmds, cmd)

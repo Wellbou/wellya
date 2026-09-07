@@ -921,6 +921,10 @@ func (m *Model) playNowTrack(track *api.Track) tea.Cmd {
 	return nil
 }
 
+type regionSkipMsg struct {
+	count int
+}
+
 func (m *Model) moveTrack(direction int) tea.Cmd {
 	selectedPlaylist := m.activePlaylists().SelectedItem()
 	if len(selectedPlaylist.Tracks) == 0 || selectedPlaylist.Kind == playlist.MYWAVE || selectedPlaylist.Kind == playlist.STATION || selectedPlaylist.Kind == playlist.HISTORY || selectedPlaylist.Kind == playlist.NONE {
