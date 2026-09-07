@@ -13,6 +13,8 @@ import (
 
 var Current Config
 
+var migratedKeys = false
+
 const OldDirName = "yamusic-tui"
 
 func migrateOldConfig() {
@@ -61,6 +63,10 @@ func InitialLoad() error {
 	}
 
 	Current = conf
+	if migratedKeys {
+		migratedKeys = false
+		return save(Current)
+	}
 	return nil
 }
 
@@ -133,6 +139,14 @@ func load() (Config, error) {
 			if legacy, ok := rawControls["tracks-previous-page"]; ok && legacy != nil {
 				newConfig.Controls.TracksPageDown = NewKey(anyToString(legacy))
 			}
+		}
+		if anyToString(rawControls["player-cache"]) == "S" {
+			newConfig.Controls.PlayerCache = NewKey("c")
+			migratedKeys = true
+		}
+		if anyToString(rawControls["tracks-play-next"]) == "n" {
+			newConfig.Controls.TracksPlayNext = NewKey("p")
+			migratedKeys = true
 		}
 	}
 
