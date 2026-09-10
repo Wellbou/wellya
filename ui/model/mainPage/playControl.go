@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	_ "image/png"
 
 	tea "github.com/charmbracelet/bubbletea"
+	mp3 "github.com/dece2183/go-stream-mp3"
 	"github.com/bogem/id3v2/v2"
 	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/cache"
@@ -235,6 +237,7 @@ type trackReadyMsg struct {
 	generation int
 	track      *api.Track
 	buffer     *stream.BufferedStream
+	decoder    *mp3.Decoder
 	lyrics     []api.LyricPair
 	bitrate    int
 	fromCache  bool
@@ -400,10 +403,36 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 		log.Print(log.LVL_WARNING, "failed to create metadata file: %s", err)
 	}
 
+	decoder, err := mp3.NewDecoder(trackBuffer)
+	if err != nil {
+		log.Print(log.LVL_ERROR, "failed to create mp3 decoder: %s", err)
+		trackBuffer.Close()
+		if int64(generation) != m.playGeneration.Load() {
+			return
+		}
+		m.Send(trackFailedMsg{generation: generation, reason: "track decode"})
+		return
+	}
+
+	if seekMs := m.pendingResumePos; seekMs > 0 && track.DurationMs > 0 {
+		posMs := int64(seekMs)
+		if posMs < 0 || posMs >= int64(track.DurationMs)-1000 {
+			posMs = 0
+		}
+		if posMs > 0 {
+			byteOffset := int64(math.Round((float64(trackBuffer.Length()) / float64(track.DurationMs)) * float64(posMs)))
+			byteOffset -= byteOffset % 4
+			if _, serr := decoder.Seek(byteOffset, io.SeekStart); serr != nil {
+				log.Print(log.LVL_WARNING, "resume seek failed: %s", serr)
+			}
+		}
+	}
+
 	m.Send(trackReadyMsg{
 		generation: generation,
 		track:      track,
 		buffer:     trackBuffer,
+		decoder:    decoder,
 		lyrics:     lyrics,
 		bitrate:    bitrate,
 		fromCache:  trackFromCache,

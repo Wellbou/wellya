@@ -295,13 +295,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tracker.SetBitrate(msg.bitrate)
 		m.pendingCache = false
-		if !m.tracker.StartTrack(msg.track, msg.buffer, msg.lyrics) {
-			break
-		}
+		m.tracker.StartTrack(msg.track, msg.buffer, msg.decoder, msg.lyrics)
 		if m.pendingResumePos > 0 {
-			pos := m.pendingResumePos
 			m.pendingResumePos = 0
-			m.tracker.SetPos(time.Duration(pos) * time.Millisecond)
 			m.tracker.Pause()
 		}
 		m.indicateCurrentTrackPlaying(true)

@@ -10,6 +10,11 @@ import (
 	"github.com/wellbou/wellya/log"
 )
 
+const (
+	maxSessionBytes  = 1 << 20
+	maxSessionTracks = 2000
+)
+
 type sessionState struct {
 	PlaylistKind uint64   `json:"playlist_kind"`
 	IsRadio      bool     `json:"is_radio"`
@@ -32,7 +37,14 @@ func (m *Model) saveSession() {
 		if pl := m.currentPlaylist(); pl != nil && len(pl.Tracks) > 0 && !pl.Rotor {
 			ids := make([]string, 0, len(pl.Tracks))
 			for i := range pl.Tracks {
-				ids = append(ids, string(pl.Tracks[i].Id))
+				id := string(pl.Tracks[i].Id)
+				if id == "" || len(id) > 128 {
+					continue
+				}
+				ids = append(ids, id)
+				if len(ids) >= maxSessionTracks {
+					break
+				}
 			}
 			curIdx := pl.CurrentTrack
 			if curIdx < 0 || curIdx >= len(pl.Tracks) {
@@ -52,22 +64,61 @@ func (m *Model) saveSession() {
 		return
 	}
 
+	if len(state.History) > 100 {
+		state.History = state.History[:100]
+	}
 	data, err := json.Marshal(state)
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(sessionPath(), data, 0644); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(sessionPath()), "session-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := os.Rename(tmpName, sessionPath()); err != nil {
+		_ = os.Remove(tmpName)
 		log.Print(log.LVL_WARNING, "failed to save session: %s", err)
 	}
 }
 
+func validSessionID(id string) bool {
+	return id != "" && len(id) <= 128
+}
+
 func (m *Model) restoreSession() {
+	st, err := os.Stat(sessionPath())
+	if err != nil || st.Size() > maxSessionBytes {
+		return
+	}
 	data, err := os.ReadFile(sessionPath())
 	if err != nil {
 		return
 	}
 	var s sessionState
 	if err := json.Unmarshal(data, &s); err != nil {
+		log.Print(log.LVL_WARNING, "ignoring corrupt session file: %s", err)
+		_ = os.Remove(sessionPath())
+		return
+	}
+	if len(s.TrackIDs) > maxSessionTracks {
+		return
+	}
+	for _, id := range s.TrackIDs {
+		if !validSessionID(id) {
+			return
+		}
+	}
+	if s.Current < 0 || s.PositionMs < 0 {
 		return
 	}
 	if len(s.History) > 0 {

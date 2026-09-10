@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	mp3 "github.com/dece2183/go-stream-mp3"
 	"github.com/ebitengine/oto/v3"
 )
 
@@ -470,7 +471,7 @@ func (m *Model) Volume() float64 {
 	return m.volume
 }
 
-func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyrics []api.LyricPair) bool {
+func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, decoder *mp3.Decoder, lyrics []api.LyricPair) {
 	m.showError = false
 	m.currentBitrate = 0
 	if m.muted {
@@ -485,11 +486,7 @@ func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyri
 	}
 
 	m.track = *track
-	if err := m.trackWrapper.NewReader(reader); err != nil {
-		reader.Close()
-		m.ShowError("track decode")
-		return false
-	}
+	m.trackWrapper.NewReaderWithDecoder(reader, decoder)
 	m.player = m.playerContext.NewPlayer(m.trackWrapper)
 	m.player.SetVolume(0)
 	m.player.Play()
@@ -497,7 +494,6 @@ func (m *Model) StartTrack(track *api.Track, reader *stream.BufferedStream, lyri
 	m.paused = false
 	m.playtime = 0
 	m.playStarted = time.Now()
-	return true
 }
 
 func (m *Model) Stop() {

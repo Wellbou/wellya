@@ -25,13 +25,7 @@ type readWrapper struct {
 	mux            sync.Mutex
 }
 
-func (w *readWrapper) NewReader(reader *stream.BufferedStream) error {
-	decoder, err := mp3.NewDecoder(reader)
-	if err != nil {
-		log.Print(log.LVL_ERROR, "failed to create mp3 decoder: %s", err)
-		return err
-	}
-
+func (w *readWrapper) NewReaderWithDecoder(reader *stream.BufferedStream, decoder *mp3.Decoder) {
 	w.mux.Lock()
 	defer w.mux.Unlock()
 	w.trackBuffered = false
@@ -39,20 +33,15 @@ func (w *readWrapper) NewReader(reader *stream.BufferedStream) error {
 	w.trackBuffer = reader
 	w.decoder = decoder
 	w.lastUpdateTime = time.Now()
-	return nil
 }
 
 func (w *readWrapper) Close() {
 	w.mux.Lock()
-	decoder := w.decoder
 	buffer := w.trackBuffer
 	w.decoder = nil
 	w.trackBuffer = nil
 	w.mux.Unlock()
 
-	if decoder != nil {
-		decoder.Seek(0, io.SeekStart)
-	}
 	if buffer != nil {
 		buffer.Close()
 	}
