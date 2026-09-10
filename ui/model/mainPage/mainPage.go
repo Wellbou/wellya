@@ -301,7 +301,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.tracker.Pause()
 		}
 		m.indicateCurrentTrackPlaying(true)
-		m.mediaHandler.OnPlayback()
+		go m.mediaHandler.OnPlayback()
 		if m.client != nil {
 			go m.client.PlayTrack(msg.track, msg.fromCache)
 		}
@@ -737,13 +737,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = m.likePlayingTrack()
 			cmds = append(cmds, cmd)
 		case tracker.PLAY, tracker.PAUSE:
-			m.mediaHandler.OnPlayPause()
+			go m.mediaHandler.OnPlayPause()
 		case tracker.STOP:
-			m.mediaHandler.OnEnded()
+			go m.mediaHandler.OnEnded()
 		case tracker.REWIND:
-			m.mediaHandler.OnSeek(m.tracker.Position())
+			go m.mediaHandler.OnSeek(m.tracker.Position())
 		case tracker.VOLUME:
-			m.mediaHandler.OnVolume()
+			go m.mediaHandler.OnVolume()
 		case tracker.CACHE_TRACK:
 			if buf := m.tracker.TrackBuffer(); buf != nil && buf.IsBuffered() {
 				cmd = m.cacheCurrentTrack()

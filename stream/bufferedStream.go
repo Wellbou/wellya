@@ -187,6 +187,15 @@ func (h *BufferedStream) BufferingProgress() float64 {
 	return float64(len(h.readBuffer)) / float64(h.totalSize)
 }
 
+func (h *BufferedStream) BufferedBytes() int64 {
+	if h == nil {
+		return 0
+	}
+	h.mux.Lock()
+	defer h.mux.Unlock()
+	return int64(len(h.readBuffer))
+}
+
 func (h *BufferedStream) WriteTo(dest io.Writer) (int64, error) {
 	h.mux.Lock()
 	snapshot := make([]byte, len(h.readBuffer))
@@ -220,6 +229,8 @@ func (h *BufferedStream) bufferFrames(size int64) {
 			int64(len(h.readBuffer)) >= _BUFFERING_MAX {
 			if int64(len(h.readBuffer)) >= _BUFFERING_MAX && !h.closedFlag {
 				h.lastError = errBufferTooLarge
+			}
+			if !h.closedFlag {
 				h.eof = true
 			}
 			h.closeSourceLocked()

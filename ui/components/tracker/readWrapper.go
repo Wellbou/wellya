@@ -111,6 +111,8 @@ func (w *readWrapper) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (w *readWrapper) Length() int64 {
+	w.mux.Lock()
+	defer w.mux.Unlock()
 	if w.trackBuffer == nil {
 		return 0
 	}
@@ -118,5 +120,10 @@ func (w *readWrapper) Length() int64 {
 }
 
 func (w *readWrapper) Progress() float64 {
+	w.mux.Lock()
+	defer w.mux.Unlock()
+	if w.trackBuffer == nil {
+		return 0
+	}
 	return w.trackBuffer.Progress()
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 
 	_ "image/jpeg"
 	_ "image/png"
@@ -32,6 +33,24 @@ const (
 )
 
 var errNoClient = errors.New("not logged in")
+
+const (
+	_READY_BYTES   = 256 * 1024
+	_READY_TIMEOUT = 30 * time.Second
+)
+
+func waitBuffered(buf *stream.BufferedStream, need int64) bool {
+	deadline := time.Now().Add(_READY_TIMEOUT)
+	for {
+		if buf.BufferedBytes() >= need || buf.IsBuffered() || buf.IsDone() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
 
 func (m *Model) feedbackOnTrack(batch string) *api.RotorFeedback {
 	currTrack := m.tracker.CurrentTrack()
@@ -426,6 +445,15 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 				log.Print(log.LVL_WARNING, "resume seek failed: %s", serr)
 			}
 		}
+	}
+
+	if !waitBuffered(trackBuffer, _READY_BYTES) {
+		trackBuffer.Close()
+		if int64(generation) != m.playGeneration.Load() {
+			return
+		}
+		m.Send(trackFailedMsg{generation: generation, reason: "track stalled"})
+		return
 	}
 
 	m.Send(trackReadyMsg{
