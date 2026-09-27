@@ -6,75 +6,72 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wellbou/wellya/media/handler"
 	"github.com/godbus/dbus/v5"
 	"github.com/quarckster/go-mpris-server/pkg/types"
+	"github.com/wellbou/wellya/media/handler"
 )
 
 func (mh *MprisHandler) Next() error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_NEXT,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) Previous() error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_PREVIOUS,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) Pause() error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_PAUSE,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) PlayPause() error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_PLAYPAUSE,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) Stop() error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_STOP,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) Play() error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_PLAY,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) Seek(offset types.Microseconds) error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_SEEK,
 		Arg:  time.Duration(offset) * time.Microsecond,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) SetPosition(trackId string, position types.Microseconds) error {
-	mh.msgChan <- handler.Message{
-		Type: handler.MSG_GET_METADATA,
-	}
-
-	resp, ok := (<-mh.ansChan).(handler.TrackMetadata)
+	ans, _ := mh.request(handler.MSG_GET_METADATA)
+	resp, ok := ans.(handler.TrackMetadata)
 	if !ok || resp.TrackId != trackId {
 		return fmt.Errorf("trackId mismatch")
 	}
 
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_SETPOS,
 		Arg:  time.Duration(position) * time.Microsecond,
-	}
+	})
 
 	return nil
 }
@@ -84,11 +81,8 @@ func (mh *MprisHandler) OpenUri(uri string) error {
 }
 
 func (mh *MprisHandler) PlaybackStatus() (types.PlaybackStatus, error) {
-	mh.msgChan <- handler.Message{
-		Type: handler.MSG_GET_PLAYBACKSTATUS,
-	}
-
-	resp, ok := (<-mh.ansChan).(handler.PlaybackState)
+	ans, _ := mh.request(handler.MSG_GET_PLAYBACKSTATUS)
+	resp, ok := ans.(handler.PlaybackState)
 	if !ok {
 		return types.PlaybackStatusStopped, fmt.Errorf("wrong playback status type")
 	}
@@ -114,11 +108,8 @@ func (mh *MprisHandler) SetRate(float64) error {
 }
 
 func (mh *MprisHandler) Metadata() (md types.Metadata, err error) {
-	mh.msgChan <- handler.Message{
-		Type: handler.MSG_GET_METADATA,
-	}
-
-	resp, ok := (<-mh.ansChan).(handler.TrackMetadata)
+	ans, _ := mh.request(handler.MSG_GET_METADATA)
+	resp, ok := ans.(handler.TrackMetadata)
 	if !ok {
 		err = fmt.Errorf("wrong metadata type")
 		return
@@ -142,11 +133,8 @@ func (mh *MprisHandler) Metadata() (md types.Metadata, err error) {
 }
 
 func (mh *MprisHandler) Volume() (float64, error) {
-	mh.msgChan <- handler.Message{
-		Type: handler.MSG_GET_VOLUME,
-	}
-
-	resp, ok := (<-mh.ansChan).(float64)
+	ans, _ := mh.request(handler.MSG_GET_VOLUME)
+	resp, ok := ans.(float64)
 	if !ok {
 		return 0, fmt.Errorf("wrong volume type")
 	}
@@ -155,19 +143,16 @@ func (mh *MprisHandler) Volume() (float64, error) {
 }
 
 func (mh *MprisHandler) SetVolume(vol float64) error {
-	mh.msgChan <- handler.Message{
+	mh.post(handler.Message{
 		Type: handler.MSG_SET_VOLUME,
 		Arg:  vol,
-	}
+	})
 	return nil
 }
 
 func (mh *MprisHandler) Position() (int64, error) {
-	mh.msgChan <- handler.Message{
-		Type: handler.MSG_GET_POSITION,
-	}
-
-	resp, ok := (<-mh.ansChan).(time.Duration)
+	ans, _ := mh.request(handler.MSG_GET_POSITION)
+	resp, ok := ans.(time.Duration)
 	if !ok {
 		return 0, fmt.Errorf("wrong position type")
 	}

@@ -269,8 +269,8 @@ func (m *Model) confirmRemoveFromPlaylist(pl *playlist.Item, index int) tea.Cmd 
 		}
 	}
 
-	m.confirmAction = func() tea.Msg {
-		return m.removeFromPlaylist(pl, index)()
+	m.confirmAction = func() tea.Cmd {
+		return m.removeFromPlaylist(pl, index)
 	}
 	m.confirmMessage = msg
 	m.isConfirmActive = true
@@ -707,6 +707,7 @@ func (m *Model) toggleQueue() {
 	}
 
 	m.tracklist.SetItems(trackList)
+	m.tracklist.SetNumberOffset(currentPlaylist.CurrentTrack + 1)
 	m.tracklist.Select(0)
 	m.tracklist.Title = "Up Next"
 }

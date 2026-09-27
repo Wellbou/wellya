@@ -34,6 +34,24 @@ func (fs *FlexString) UnmarshalJSON(data []byte) error {
 
 func (fs FlexString) String() string { return string(fs) }
 
+// FlexBool accepts true/false, 0/1, "true"/"false", "0"/"1" and null.
+// Yandex is inconsistent about boolean encoding across endpoints.
+type FlexBool bool
+
+func (fb *FlexBool) UnmarshalJSON(data []byte) error {
+	s := strings.ToLower(strings.Trim(string(bytes.TrimSpace(data)), "\""))
+	switch s {
+	case "true", "1", "yes":
+		*fb = true
+	case "", "null", "false", "0", "no":
+		*fb = false
+	default:
+		f, err := strconv.ParseFloat(s, 64)
+		*fb = FlexBool(err == nil && f != 0)
+	}
+	return nil
+}
+
 type FlexInt int
 
 func (fi *FlexInt) UnmarshalJSON(data []byte) error {
@@ -171,7 +189,7 @@ type UserStatus struct {
 		SecondName       string     `json:"secondName"`
 		FullName         string     `json:"fullName"`
 		Login            string     `json:"login"`
-		ServiceAvailable bool       `json:"serviceAvailable"`
+		ServiceAvailable FlexBool   `json:"serviceAvailable"`
 	} `json:"account"`
 
 	Permissions struct {
@@ -180,8 +198,8 @@ type UserStatus struct {
 	} `json:"permissions"`
 
 	Plus struct {
-		HasPlus             bool `json:"hasPlus"`
-		IsTutorialCompleted bool `json:"isTutorialCompleted"`
+		HasPlus             FlexBool `json:"hasPlus"`
+		IsTutorialCompleted FlexBool `json:"isTutorialCompleted"`
 	} `json:"plus"`
 }
 
@@ -197,7 +215,7 @@ type Owner struct {
 	Name     string     `json:"name"`
 	Sex      string     `json:"sex"`
 	Uid      FlexUint64 `json:"uid"`
-	Verified bool       `json:"verified"`
+	Verified FlexBool   `json:"verified"`
 }
 
 type Tag struct {
@@ -235,8 +253,8 @@ func (l *Label) UnmarshalJSON(data []byte) error {
 type Artist struct {
 	Id       FlexUint64 `json:"id"`
 	Name     string     `json:"name"`
-	Various  bool       `json:"various"`
-	Composer bool       `json:"composer"`
+	Various  FlexBool   `json:"various"`
+	Composer FlexBool   `json:"composer"`
 	Cover    Cover      `json:"cover"`
 	Genres   []string   `json:"genres"`
 }
@@ -249,7 +267,7 @@ type ArtistTracks struct {
 type Album struct {
 	Id          FlexUint64 `json:"id"`
 	Title       string     `json:"title"`
-	Available   bool       `json:"available"`
+	Available   FlexBool   `json:"available"`
 	Type        string     `json:"type"`
 	MetaType    string     `json:"metaType"`
 	Year        FlexInt    `json:"year"`
@@ -257,7 +275,7 @@ type Album struct {
 	CoverUri    string     `json:"coverUri"`
 	OgImage     string     `json:"ogImage"`
 	Genre       string     `json:"genre"`
-	Recent      bool       `json:"recent"`
+	Recent      FlexBool   `json:"recent"`
 	TrackCount  FlexInt    `json:"trackCount"`
 	Volumes     [][]Track  `json:"volumes"`
 	Artists     []Artist   `json:"artists"`
@@ -267,16 +285,16 @@ type Album struct {
 type Track struct {
 	Id              FlexString `json:"id"`
 	RealId          FlexString `json:"realId"`
-	Title           string `json:"title"`
-	Version         string `json:"version"`
-	Available       bool   `json:"available"`
-	Type            string `json:"type"`
-	CoverUri        string `json:"coverUri"`
-	OgImage         string `json:"ogImage"`
-	LyricsAvailable bool   `json:"lyricsAvailable"`
+	Title           string     `json:"title"`
+	Version         string     `json:"version"`
+	Available       FlexBool   `json:"available"`
+	Type            string     `json:"type"`
+	CoverUri        string     `json:"coverUri"`
+	OgImage         string     `json:"ogImage"`
+	LyricsAvailable FlexBool   `json:"lyricsAvailable"`
 	LyricsInfo      struct {
-		HasAvailableSyncLyrics bool `json:"hasAvailableSyncLyrics"`
-		HasAvailableTextLyrics bool `json:"hasAvailableTextLyrics"`
+		HasAvailableSyncLyrics FlexBool `json:"hasAvailableSyncLyrics"`
+		HasAvailableTextLyrics FlexBool `json:"hasAvailableTextLyrics"`
 	} `json:"lyricsInfo"`
 	Normalization struct {
 		Gain float32 `json:"gain"`
@@ -292,34 +310,34 @@ type Track struct {
 
 	Major struct {
 		Id   FlexInt `json:"id"`
-		Name string `json:"name"`
+		Name string  `json:"name"`
 	} `json:"major"`
 
 	Artists []Artist `json:"artists"`
 
 	Albums []Album `json:"albums"`
 
-	FileSize         FlexInt `json:"fileSize"`
-	StorageDir       string `json:"storageDir"`
-	DurationMs       FlexInt `json:"durationMs"`
-	RememberPosition bool   `json:"rememberPosition"`
-	PlayCount        FlexInt `json:"playCount"`
+	FileSize         FlexInt  `json:"fileSize"`
+	StorageDir       string   `json:"storageDir"`
+	DurationMs       FlexInt  `json:"durationMs"`
+	RememberPosition FlexBool `json:"rememberPosition"`
+	PlayCount        FlexInt  `json:"playCount"`
 }
 
 type Playlist struct {
 	Uid  FlexUint64 `json:"uid"`
 	Kind FlexUint64 `json:"kind"`
 
-	Title                string `json:"title"`
-	Description          string `json:"description"`
-	DescriptionFormatted string `json:"descriptionFormatted"`
-	Available            bool   `json:"available"`
-	Collective           bool   `json:"collective"`
-	Created              string `json:"created"`
-	Modified             string `json:"modified"`
-	Visibility           string `json:"visibility"`
-	LikesCount           FlexInt `json:"likesCount"`
-	Revision             FlexInt `json:"revision"`
+	Title                string   `json:"title"`
+	Description          string   `json:"description"`
+	DescriptionFormatted string   `json:"descriptionFormatted"`
+	Available            FlexBool `json:"available"`
+	Collective           FlexBool `json:"collective"`
+	Created              string   `json:"created"`
+	Modified             string   `json:"modified"`
+	Visibility           string   `json:"visibility"`
+	LikesCount           FlexInt  `json:"likesCount"`
+	Revision             FlexInt  `json:"revision"`
 
 	Tags    []Tag  `json:"tags"`
 	Owner   Owner  `json:"owner"`
@@ -332,10 +350,10 @@ type Playlist struct {
 	TrackCount FlexInt `json:"trackCount"`
 	Tracks     []struct {
 		Id        FlexString `json:"id"`
-		PlayCount FlexInt   `json:"playCount"`
-		Recent    bool      `json:"recent"`
-		Timestamp string    `json:"timestamp"`
-		Track     Track     `json:"track"`
+		PlayCount FlexInt    `json:"playCount"`
+		Recent    FlexBool   `json:"recent"`
+		Timestamp string     `json:"timestamp"`
+		Track     Track      `json:"track"`
 	} `json:"tracks"`
 }
 
@@ -446,9 +464,9 @@ type StationTracks struct {
 	Id            StationId   `json:"id"`
 	AcceptedSeeds []StationId `json:"acceptedSeeds"`
 	Sequence      []struct {
-		Type  string `json:"type"`
-		Track Track  `json:"track"`
-		Liked bool   `json:"liked"`
+		Type  string   `json:"type"`
+		Track Track    `json:"track"`
+		Liked FlexBool `json:"liked"`
 	} `json:"sequence"`
 	BatchId        string `json:"batchId"`
 	RadioSessionId string `json:"radioSessionId"`
@@ -488,12 +506,12 @@ type PinsDesc struct {
 }
 
 type TrackDownloadInfo struct {
-	Codec           string `json:"codec"`
-	Gain            bool   `json:"gain"`
-	Preview         bool   `json:"preview"`
-	DownloadInfoUrl string  `json:"downloadInfoUrl"`
-	Direct          bool    `json:"direct"`
-	BbitrateInKbps  FlexInt `json:"bitrateInKbps"`
+	Codec           string   `json:"codec"`
+	Gain            FlexBool `json:"gain"`
+	Preview         FlexBool `json:"preview"`
+	DownloadInfoUrl string   `json:"downloadInfoUrl"`
+	Direct          FlexBool `json:"direct"`
+	BbitrateInKbps  FlexInt  `json:"bitrateInKbps"`
 }
 
 type SearchType string
@@ -546,12 +564,12 @@ type SearchResult struct {
 		Results []Track `json:"results"`
 	} `json:"tracks"`
 
-	Type              string `json:"type"`
-	Page              FlexInt `json:"page"`
-	PerPage           FlexInt `json:"perPage"`
-	MisspellCorrected bool   `json:"misspellCorrected"`
-	MisspellOriginal  string `json:"misspellOriginal"`
-	Nocorrect         bool   `json:"nocorrect"`
+	Type              string   `json:"type"`
+	Page              FlexInt  `json:"page"`
+	PerPage           FlexInt  `json:"perPage"`
+	MisspellCorrected FlexBool `json:"misspellCorrected"`
+	MisspellOriginal  string   `json:"misspellOriginal"`
+	Nocorrect         FlexBool `json:"nocorrect"`
 }
 
 type SearchSuggest struct {
@@ -567,7 +585,7 @@ type TrackLyrics struct {
 	DownloadUrl     string     `json:"downloadUrl"`
 	LyricId         FlexString `json:"lyricId"`
 	ExternalLyricId FlexString `json:"externalLyricId"`
-	Writers         []string `json:"writers"`
+	Writers         []string   `json:"writers"`
 	Major           struct {
 		Id         FlexInt `json:"id"`
 		Name       string  `json:"name"`

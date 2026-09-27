@@ -13,8 +13,9 @@ import (
 )
 
 type ItemDelegate struct {
-	likesMap *map[string]bool
-	cacheMap *map[string]bool
+	likesMap  *map[string]bool
+	cacheMap  *map[string]bool
+	numOffset *int
 }
 
 func (d ItemDelegate) Height() int {
@@ -73,7 +74,7 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 			trackArtistStyle lipgloss.Style
 		)
 
-		trackNum := style.TrackVersionStyle.Render(fmt.Sprintf("%2d ", index+1))
+		trackNum := style.TrackVersionStyle.Render(fmt.Sprintf("%2d ", index+1+d.offset()))
 		trackTitle += trackNum
 
 		if item.IsSuggestion {
@@ -158,4 +159,11 @@ func (d ItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	fmt.Fprint(w, stl.Render(content))
+}
+
+func (d ItemDelegate) offset() int {
+	if d.numOffset == nil {
+		return 0
+	}
+	return *d.numOffset
 }

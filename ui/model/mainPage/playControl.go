@@ -13,9 +13,9 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
+	"github.com/bogem/id3v2/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	mp3 "github.com/dece2183/go-stream-mp3"
-	"github.com/bogem/id3v2/v2"
 	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/cache"
 	"github.com/wellbou/wellya/config"
@@ -274,19 +274,19 @@ type errorToastMsg struct {
 func (m *Model) playTrack(track *api.Track) {
 	m.tracker.Stop()
 	generation := int(m.playGeneration.Add(1))
-	go m.loadTrack(m.client, track, generation)
+	go m.loadTrack(m.client, track, generation, config.Current.AudioQuality)
 }
 
-func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generation int) {
+func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generation int, quality config.AudioQuality) {
 	var (
 		wg sync.WaitGroup
 
 		coverType  string
 		coverBytes []byte
 
-	lyrics   []api.LyricPair
-	lyricErr error
-	bitrate  int
+		lyrics   []api.LyricPair
+		lyricErr error
+		bitrate  int
 
 		trackReader    io.ReadCloser
 		trackSize      int64
@@ -377,9 +377,9 @@ func (m *Model) loadTrack(client *api.YaMusicClient, track *api.Track, generatio
 				lastErr = ierr
 				continue
 			}
-		bestTrackInfo := selectBestDownloadInfo(trackInfos, config.Current.AudioQuality)
-		bitrate = int(bestTrackInfo.BbitrateInKbps)
-		tr2, ts2, derr := client.DownloadTrack(bestTrackInfo)
+			bestTrackInfo := selectBestDownloadInfo(trackInfos, quality)
+			bitrate = int(bestTrackInfo.BbitrateInKbps)
+			tr2, ts2, derr := client.DownloadTrack(bestTrackInfo)
 			if derr != nil {
 				log.Print(log.LVL_ERROR, "failed to download track [%s]: %s", track.Id, derr)
 				lastErr = derr

@@ -21,9 +21,14 @@ import (
 )
 
 const (
-	_RESPONSE_TIMEOUT   = 2500 * time.Millisecond
-	_TRACK_READ_TIMEOUT = 1500 * time.Millisecond
-	_TIMESTAMP_FORMAT   = "2006-01-02T15:04:05.999Z"
+	_RESPONSE_TIMEOUT = 2500 * time.Millisecond
+	// Stall watchdog for streamed bodies: abort only if a single Read
+	// gets no bytes at all for this long. The buffered stream reads eagerly
+	// (not paced by playback), so pausing never trips it.
+	_TRACK_READ_TIMEOUT = 30 * time.Second
+	// Hard cap for whole JSON/cover requests (headers + body).
+	_REQUEST_TIMEOUT  = 30 * time.Second
+	_TIMESTAMP_FORMAT = "2006-01-02T15:04:05.999Z"
 )
 
 var mTLSConfig = &tls.Config{
@@ -62,6 +67,10 @@ func nowTimestamp() string {
 func proccessRequest[RetT any](req *http.Request) (result RetT, invInfo InvocInfo, err error) {
 	req.Header.Add("x-Yandex-Music-Client", "YandexMusicAndroid/24024312")
 	req.Header.Add("User-Agent", "okhttp/4.12.0")
+
+	ctx, cancel := context.WithTimeout(req.Context(), _REQUEST_TIMEOUT)
+	defer cancel()
+	req = req.WithContext(ctx)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -290,7 +299,9 @@ func DownloadTrackCover(dst io.Writer, track *Track, size int) (string, error) {
 		return "", errors.New("cover not available")
 	}
 
-	req, err := http.NewRequest(http.MethodGet, coverUrl, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), _REQUEST_TIMEOUT)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, coverUrl, nil)
 	if err != nil {
 		return "", err
 	}

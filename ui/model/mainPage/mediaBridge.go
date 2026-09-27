@@ -61,24 +61,47 @@ func (m *Model) mediaHandle() {
 		case handler.MSG_GET_PLAYBACKSTATUS:
 			reply := make(chan handler.PlaybackState, 1)
 			m.Send(mediaStatusQuery{reply: reply})
-			m.mediaHandler.SendAnswer(<-reply)
+			if ans, ok := awaitReply(reply); ok {
+				m.mediaHandler.SendAnswer(ans)
+			}
 		case handler.MSG_GET_SHUFFLE:
 			reply := make(chan bool, 1)
 			m.Send(mediaShuffleQuery{reply: reply})
-			m.mediaHandler.SendAnswer(<-reply)
+			if ans, ok := awaitReply(reply); ok {
+				m.mediaHandler.SendAnswer(ans)
+			}
 		case handler.MSG_GET_METADATA:
 			reply := make(chan handler.TrackMetadata, 1)
 			m.Send(mediaMetadataQuery{reply: reply})
-			m.mediaHandler.SendAnswer(<-reply)
+			if ans, ok := awaitReply(reply); ok {
+				m.mediaHandler.SendAnswer(ans)
+			}
 		case handler.MSG_GET_VOLUME:
 			reply := make(chan float64, 1)
 			m.Send(mediaVolumeQuery{reply: reply})
-			m.mediaHandler.SendAnswer(<-reply)
+			if ans, ok := awaitReply(reply); ok {
+				m.mediaHandler.SendAnswer(ans)
+			}
 		case handler.MSG_GET_POSITION:
 			reply := make(chan time.Duration, 1)
 			m.Send(mediaPositionQuery{reply: reply})
-			m.mediaHandler.SendAnswer(<-reply)
+			if ans, ok := awaitReply(reply); ok {
+				m.mediaHandler.SendAnswer(ans)
+			}
 		}
+	}
+}
+
+// awaitReply waits for the UI thread to answer a media query. After the
+// program quits nobody answers, so an unbounded wait here leaked the
+// bridge goroutine and stalled the MPRIS handler.
+func awaitReply[T any](reply chan T) (T, bool) {
+	select {
+	case v := <-reply:
+		return v, true
+	case <-time.After(2 * time.Second):
+		var zero T
+		return zero, false
 	}
 }
 

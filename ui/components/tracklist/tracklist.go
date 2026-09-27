@@ -52,17 +52,18 @@ const (
 )
 
 type Model struct {
-	program       *tea.Program
-	list          list.Model
-	help          help.Model
-	helpMap       *helpKeyMap
-	filterInput   textinput.Model
-	allItems      []Item
+	program        *tea.Program
+	list           list.Model
+	help           help.Model
+	helpMap        *helpKeyMap
+	filterInput    textinput.Model
+	allItems       []Item
 	preFilterIndex int
-	width, height int
-	Hidden        bool
-	Title         string
-	Shufflable    bool
+	numOffset      int
+	width, height  int
+	Hidden         bool
+	Title          string
+	Shufflable     bool
 }
 
 func New(p *tea.Program, likesMap *map[string]bool, cacheMap *map[string]bool) *Model {
@@ -76,7 +77,7 @@ func New(p *tea.Program, likesMap *map[string]bool, cacheMap *map[string]bool) *
 
 	controls := config.Current.Controls
 
-	m.list = list.New([]list.Item{}, ItemDelegate{likesMap: likesMap, cacheMap: cacheMap}, 512, 512)
+	m.list = list.New([]list.Item{}, ItemDelegate{likesMap: likesMap, cacheMap: cacheMap, numOffset: &m.numOffset}, 512, 512)
 	m.list.Styles.Title = style.TrackListTitleStyle
 	m.list.KeyMap = list.KeyMap{
 		CursorUp:   key.NewBinding(controls.CursorUp.Binding(), controls.CursorUp.Help("up")),
@@ -321,7 +322,17 @@ func (m *Model) Items() []Item {
 	return items
 }
 
+// SetNumberOffset shifts the displayed track numbers (e.g. "Up Next"
+// continues from the current track instead of restarting at 1).
+func (m *Model) SetNumberOffset(n int) {
+	if n < 0 {
+		n = 0
+	}
+	m.numOffset = n
+}
+
 func (m *Model) SetItems(items []Item) tea.Cmd {
+	m.numOffset = 0
 	m.allItems = make([]Item, len(items))
 	copy(m.allItems, items)
 	m.preFilterIndex = -1
@@ -395,4 +406,3 @@ func (m *Model) SetHeight(h int) {
 func (m *Model) Height() int {
 	return m.height
 }
-

@@ -63,18 +63,18 @@ type sleepTickMsg struct{}
 var rewindAmount = time.Duration(config.Current.RewindDuration) * time.Second
 
 type Model struct {
-	width      int
-	track      api.Track
-	lyrics     []api.LyricPair
-	progress   progress.Model
+	width       int
+	track       api.Track
+	lyrics      []api.LyricPair
+	progress    progress.Model
 	progressPct float64
-	volumeBar  progress.Model
-	help       help.Model
-	helpMap    *helpKeyMap
-	Hidden     bool
-	showLyrics bool
-	showError  bool
-	errorText  string
+	volumeBar   progress.Model
+	help        help.Model
+	helpMap     *helpKeyMap
+	Hidden      bool
+	showLyrics  bool
+	showError   bool
+	errorText   string
 
 	paused         bool
 	playtime       time.Duration
@@ -156,8 +156,10 @@ func (m *Model) View() string {
 	var playButton string
 	if m.IsPlaying() {
 		playButton = style.ActiveButtonStyle.Padding(0, 1).Margin(0).Render(style.IconPlay)
-	} else {
+	} else if m.IsStoped() {
 		playButton = style.ActiveButtonStyle.Padding(0, 1).Margin(0).Render(style.IconStop)
+	} else {
+		playButton = style.ActiveButtonStyle.Padding(0, 1).Margin(0).Render(style.IconPause)
 	}
 
 	var volumeIndicator string
@@ -700,7 +702,7 @@ func (m *Model) volumeFadeTick() {
 
 func (m *Model) lyricsVisible() bool {
 	return m.player != nil && m.showLyrics && len(m.lyrics) > 0 &&
-		(m.track.LyricsInfo.HasAvailableSyncLyrics || m.track.LyricsInfo.HasAvailableTextLyrics)
+		bool(m.track.LyricsInfo.HasAvailableSyncLyrics || m.track.LyricsInfo.HasAvailableTextLyrics)
 }
 
 func (m *Model) renderLyrics() string {
@@ -709,7 +711,7 @@ func (m *Model) renderLyrics() string {
 	}
 
 	if len(m.lyrics) > 0 && m.lyrics[0].Timestamp < 0 {
-	 shown := m.lyrics
+		shown := m.lyrics
 		if len(shown) > 7 {
 			shown = shown[:7]
 		}

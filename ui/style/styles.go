@@ -33,6 +33,7 @@ var (
 var (
 	IconPlay       = "▶"
 	IconStop       = "■"
+	IconPause      = "‖"
 	IconLiked      = "💛"
 	IconNotLiked   = "🤍"
 	IconCached     = "💿"
@@ -45,10 +46,10 @@ var (
 )
 
 var (
-	AccentTextStyle   lipgloss.Style
-	ErrorTextStyle    lipgloss.Style
-	ToastTextStyle    lipgloss.Style
-	ToastBoxStyle     lipgloss.Style
+	AccentTextStyle lipgloss.Style
+	ErrorTextStyle  lipgloss.Style
+	ToastTextStyle  lipgloss.Style
+	ToastBoxStyle   lipgloss.Style
 )
 
 var (
@@ -137,6 +138,11 @@ func Apply(style *config.Style) {
 
 	IconPlay = style.Icons.Play
 	IconStop = style.Icons.Stop
+	IconPause = style.Icons.Pause
+	if IconPause == "" {
+		// older configs have no `pause` icon; U+2016 is 1 cell in every terminal
+		IconPause = "‖"
+	}
 	IconLiked = style.Icons.Liked
 	IconNotLiked = style.Icons.NotLiked
 	IconCached = style.Icons.Cached

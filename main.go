@@ -2,6 +2,10 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/wellbou/wellya/api"
 	"github.com/wellbou/wellya/config"
@@ -20,6 +24,8 @@ func main() {
 
 	log.Start()
 	defer log.Stop()
+
+	go cleanTempDir()
 
 	err := config.InitialLoad()
 	if err != nil {
@@ -50,5 +56,26 @@ func main() {
 	if err != nil {
 		log.Print(log.LVL_PANIC, err.Error())
 		model.PrettyExit(err, 6)
+	}
+}
+
+// cleanTempDir drops stale per-track scratch files (ID3 headers for the
+// cache feature and MPRIS cover art) so /tmp/wellya doesn't grow forever.
+// Only files untouched for a day are removed; the current track is safe.
+func cleanTempDir() {
+	dir := filepath.Join(os.TempDir(), config.DirName)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-24 * time.Hour)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !(strings.HasPrefix(name, "metadata-") || strings.HasSuffix(name, ".jpg")) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			os.Remove(filepath.Join(dir, name))
+		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -282,8 +283,17 @@ func Path() string {
 	return filepath.Join(configDir, "config.yaml")
 }
 
+// saveMu serialises writers of config.yaml(.tmp); Save is called from the
+// UI thread but may overlap with a login/save triggered elsewhere.
+var saveMu sync.Mutex
+
+// Save snapshots Current by value on the caller's goroutine, then writes it.
+// Callers must invoke it from the goroutine that owns Current (the UI).
 func Save() error {
-	return save(Current)
+	snapshot := Current
+	saveMu.Lock()
+	defer saveMu.Unlock()
+	return save(snapshot)
 }
 
 func Reset() error {

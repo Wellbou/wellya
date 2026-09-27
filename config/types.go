@@ -77,6 +77,7 @@ func (t CacheType) MarshalYAML() (interface{}, error) {
 type Icons struct {
 	Play       string `yaml:"play"`
 	Stop       string `yaml:"stop"`
+	Pause      string `yaml:"pause"`
 	Liked      string `yaml:"liked"`
 	NotLiked   string `yaml:"not-liked"`
 	Cached     string `yaml:"cached"`
@@ -140,7 +141,7 @@ type Controls struct {
 	TracksShare              *Key `yaml:"tracks-share"`
 	TracksShuffle            *Key `yaml:"tracks-shuffle"`
 	TracksSearch             *Key `yaml:"tracks-search"`
-	TracksSearchTab         *Key `yaml:"tracks-search-tab"`
+	TracksSearchTab          *Key `yaml:"tracks-search-tab"`
 	TracksBack               *Key `yaml:"tracks-back"`
 	TracksHide               *Key `yaml:"tracks-hide"`
 	TracksMoveUp             *Key `yaml:"tracks-move-up"`
@@ -190,22 +191,22 @@ type Search struct {
 }
 
 type Config struct {
-	Token          string      `yaml:"token"`
-	BufferSize     float64     `yaml:"buffer-size-ms"`
-	RewindDuration float64     `yaml:"rewind-duration-s"`
-	Volume         float64     `yaml:"volume"`
-	VolumeStep     float64     `yaml:"volume-step"`
-	SuppressErrors bool        `yaml:"suppress-errors"`
-	ShowLyrics     bool        `yaml:"show-lyrics"`
+	Token          string       `yaml:"token"`
+	BufferSize     float64      `yaml:"buffer-size-ms"`
+	RewindDuration float64      `yaml:"rewind-duration-s"`
+	Volume         float64      `yaml:"volume"`
+	VolumeStep     float64      `yaml:"volume-step"`
+	SuppressErrors bool         `yaml:"suppress-errors"`
+	ShowLyrics     bool         `yaml:"show-lyrics"`
 	AudioQuality   AudioQuality `yaml:"audio-quality"`
-	CacheTracks    CacheType   `yaml:"cache-tracks"`
-	CacheDir       string      `yaml:"cache-dir"`
-	DownloadDir    string      `yaml:"download-dir"`
-	ResumeOnStart  bool        `yaml:"resume-on-start"`
-	Proxy          string      `yaml:"proxy"`
-	Search         *Search     `yaml:"search"`
-	Controls       *Controls   `yaml:"controls"`
-	Style          *Style      `yaml:"style"`
+	CacheTracks    CacheType    `yaml:"cache-tracks"`
+	CacheDir       string       `yaml:"cache-dir"`
+	DownloadDir    string       `yaml:"download-dir"`
+	ResumeOnStart  bool         `yaml:"resume-on-start"`
+	Proxy          string       `yaml:"proxy"`
+	Search         *Search      `yaml:"search"`
+	Controls       *Controls    `yaml:"controls"`
+	Style          *Style       `yaml:"style"`
 }
 
 var defaultConfig = Config{
@@ -245,7 +246,7 @@ var defaultConfig = Config{
 		TracksAddToPlaylist:      NewKey("a"),
 		TracksRemoveFromPlaylist: NewKey("ctrl+a"),
 		TracksSearch:             NewKey("ctrl+f"),
-		TracksSearchTab:         NewKey("S"),
+		TracksSearchTab:          NewKey("S"),
 		TracksShuffle:            NewKey("ctrl+x"),
 		TracksShare:              NewKey("ctrl+s"),
 		TracksBack:               NewKey("backspace"),
@@ -282,10 +283,10 @@ var defaultConfig = Config{
 		PlayerCacheAllLiked:      NewKey("C"),
 		PlayerDownload:           NewKey("ctrl+w"),
 		PlayerQualityCycle:       NewKey("q"),
-		PlayerMute:              NewKey("m"),
-		PlayerRepeatMode:        NewKey("r"),
-		PlayerSleepTimer:        NewKey("n"),
-		PlayerDislike:           NewKey("D"),
+		PlayerMute:               NewKey("m"),
+		PlayerRepeatMode:         NewKey("r"),
+		PlayerSleepTimer:         NewKey("n"),
+		PlayerDislike:            NewKey("D"),
 		KeysHelp:                 NewKey("f1"),
 	},
 	Style: &Style{
@@ -297,6 +298,7 @@ var defaultConfig = Config{
 		Icons: &Icons{
 			Play:       "▶",
 			Stop:       "■",
+			Pause:      "‖",
 			Liked:      "💛",
 			NotLiked:   "🤍",
 			Cached:     "💿",

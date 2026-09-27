@@ -14,8 +14,8 @@ import (
 	"github.com/wellbou/wellya/config"
 	"github.com/wellbou/wellya/log"
 	"github.com/wellbou/wellya/media/handler"
-	"github.com/wellbou/wellya/ui/components/input"
 	"github.com/wellbou/wellya/ui/components/help"
+	"github.com/wellbou/wellya/ui/components/input"
 	"github.com/wellbou/wellya/ui/components/playlist"
 	"github.com/wellbou/wellya/ui/components/search"
 	"github.com/wellbou/wellya/ui/components/tracker"
@@ -61,8 +61,10 @@ type Model struct {
 	isTrackInfoActive      bool
 	isCacheManagerActive   bool
 	showQueue              bool
-	confirmAction          tea.Cmd
-	confirmMessage         string
+	// confirmAction runs on the UI goroutine once the user answers "y";
+	// it may mutate the model and returns an optional follow-up Cmd.
+	confirmAction  func() tea.Cmd
+	confirmMessage string
 
 	currentPlaylistIndex int
 	currentIsRadio       bool
@@ -415,7 +417,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.isConfirmActive = false
 				m.confirmAction = nil
 				m.confirmMessage = ""
-				return m, action
+				if action == nil {
+					return m, nil
+				}
+				return m, action()
 			case "n", "esc":
 				m.isConfirmActive = false
 				m.confirmAction = nil
@@ -441,9 +446,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "d", "D":
 				m.isCacheManagerActive = false
-				m.confirmAction = func() tea.Msg {
-					return m.clearCache()()
-				}
+				m.confirmAction = m.clearCache
 				m.confirmMessage = "Delete ALL cached tracks? (y/n)"
 				m.isConfirmActive = true
 				return m, nil
@@ -488,6 +491,11 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case controls.KeysHelp.Contains(keypress):
 			m.helpDialog.Show()
 		case controls.Reload.Contains(keypress):
+			if m.isLoading {
+				// a second reload while the first is in flight used to spawn
+				// two initialLoad goroutines racing on the same menu blocks
+				break
+			}
 			config.InitialLoad()
 			m.isLoading = true
 			cmd = m.playlists.Reset()
@@ -953,8 +961,6 @@ func (m *Model) resize(width, height int) {
 	m.searchDialog.SetSize(searchWidth, m.height-4)
 	m.inputDialog.SetWidth(searchWidth)
 }
-
-
 
 func (m *Model) coverFilePath(track *api.Track) string {
 	tempDir := filepath.Join(os.TempDir(), config.DirName)

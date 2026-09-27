@@ -11,3 +11,5 @@ well-ya
 /tmp/
 api_test_manual*.go
 test_api*.go
+docs/FULL_ARCHIVE*.md
+docs/WORK_LOG*.md
