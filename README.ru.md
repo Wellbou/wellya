@@ -1,7 +1,3 @@
-<p align="center">
-  <img src=".assets/banner.png" width="800" alt="баннер wellya">
-</p>
-
 # <img src=".assets/logo.png" width="48" alt="логотип wellya"> wellya
 
 [Read in English](README.md)
