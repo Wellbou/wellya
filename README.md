@@ -173,11 +173,3 @@ On macOS the binary needs an external linker for the media keys to work:
 ```bash
 go build -ldflags="-linkmode=external" -o wellya .
 ```
-
----
-
-<p align="center">
-  <img src=".assets/OriginOfSymmetry.png" width="600" alt="Muse - Origin of Symmetry, very cool album">
-  <br>
-  <em>Thanks! I am happy when I know someone is reading this. Muse, Origin of Symmetry (2001).</em>
-</p>
