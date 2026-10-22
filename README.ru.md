@@ -173,11 +173,3 @@ go build -tags='nomedia' -o wellya .
 ```bash
 go build -ldflags="-linkmode=external" -o wellya .
 ```
-
----
-
-<p align="center">
-  <img src=".assets/OriginOfSymmetry.png" width="600" alt="Muse - Origin of Symmetry, очень крутой альбом">
-  <br>
-  <em>Слушайте на здоровье! Спасибо, что выбрали именно мой софт. Muse, Origin of Symmetry (2001) (надо же заполнить чем то футер)</em>
-</p>
